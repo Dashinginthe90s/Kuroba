@@ -24,6 +24,7 @@ import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
 import android.view.Gravity;
@@ -39,7 +40,9 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
+import com.github.adamantcheese.chan.core.repository.TypefaceRepository;
 import com.github.adamantcheese.chan.ui.layout.SearchLayout;
 import com.github.adamantcheese.chan.ui.theme.ArrowMenuDrawable;
 import com.github.adamantcheese.chan.ui.theme.DropdownArrowDrawable;
@@ -156,6 +159,11 @@ public class ToolbarContainer
         if (view != null) {
             TextView titleView = view.findViewById(R.id.title);
             if (titleView != null) {
+                Theme currentTheme = itemViewForItem(item).theme;
+                Typeface mainFont = Chan.instance(TypefaceRepository.class)
+                        .getTypeface(
+                                currentTheme != null ? currentTheme.mainFontName : ThemeHelper.getTheme().mainFontName);
+                titleView.setTypeface(mainFont);
                 titleView.setText(item.title);
             }
 
@@ -410,13 +418,15 @@ public class ToolbarContainer
     private class ItemView {
         final View view;
         final NavigationItem item;
+        final Theme theme;
 
         @Nullable
         private ToolbarMenuView menuView;
 
         public ItemView(NavigationItem item, Theme theme) {
-            this.view = createNavigationItemView(item, theme);
+            this.view = createNavigationItemView(item);
             this.item = item;
+            this.theme = theme;
         }
 
         public void attach() {
@@ -431,16 +441,16 @@ public class ToolbarContainer
             }
         }
 
-        private LinearLayout createNavigationItemView(final NavigationItem item, Theme theme) {
+        private LinearLayout createNavigationItemView(final NavigationItem item) {
             if (item.search) {
                 return createSearchLayout(item);
             } else {
-                return createNavigationLayout(item, theme);
+                return createNavigationLayout(item);
             }
         }
 
         @NonNull
-        private LinearLayout createNavigationLayout(NavigationItem item, Theme theme) {
+        private LinearLayout createNavigationLayout(NavigationItem item) {
             @SuppressLint("InflateParams")
             LinearLayout menu = (LinearLayout) inflate(getContext(), R.layout.toolbar_menu, null);
             menu.setGravity(Gravity.CENTER_VERTICAL);
@@ -449,7 +459,9 @@ public class ToolbarContainer
 
             // Title
             final TextView titleView = menu.findViewById(R.id.title);
-            titleView.setTypeface(theme != null ? theme.mainFont : ThemeHelper.getTheme().mainFont);
+            Typeface mainFont = Chan.instance(TypefaceRepository.class)
+                    .getTypeface(theme != null ? theme.mainFontName : ThemeHelper.getTheme().mainFontName);
+            titleView.setTypeface(mainFont);
             titleView.setText(item.title);
             titleView.setTextColor(Color.WHITE);
 

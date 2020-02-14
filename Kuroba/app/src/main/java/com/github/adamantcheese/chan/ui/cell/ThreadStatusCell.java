@@ -30,10 +30,12 @@ import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 
+import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.model.ChanThread;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.orm.Board;
+import com.github.adamantcheese.chan.core.repository.TypefaceRepository;
 import com.github.adamantcheese.chan.core.site.sites.chan4.Chan4PagesRequest;
 import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 
@@ -74,7 +76,8 @@ public class ThreadStatusCell
     protected void onFinishInflate() {
         super.onFinishInflate();
         text = findViewById(R.id.text);
-        text.setTypeface(ThemeHelper.getTheme().mainFont);
+        Typeface mainFont = Chan.instance(TypefaceRepository.class).getTypeface(ThemeHelper.getTheme().mainFontName);
+        text.setTypeface(mainFont);
 
         setOnClickListener(this);
     }

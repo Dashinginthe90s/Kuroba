@@ -66,6 +66,7 @@ import com.github.adamantcheese.chan.ui.adapter.PostsFilter;
 import com.github.adamantcheese.chan.ui.cell.PostCellInterface;
 import com.github.adamantcheese.chan.ui.cell.ThreadStatusCell;
 import com.github.adamantcheese.chan.ui.helper.PostHelper;
+import com.github.adamantcheese.chan.ui.helper.RefreshUIMessage;
 import com.github.adamantcheese.chan.ui.layout.ArchivesLayout;
 import com.github.adamantcheese.chan.ui.layout.ThreadListLayout;
 import com.github.adamantcheese.chan.ui.settings.base_directory.LocalThreadsBaseDirectory;
@@ -75,6 +76,9 @@ import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.adamantcheese.chan.utils.PostUtils;
 import com.github.k1rakishou.fsaf.FileManager;
+
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -165,6 +169,8 @@ public class ThreadPresenter
         this.fileCacheV2 = fileCacheV2;
         this.cacheHandler = cacheHandler;
         this.mockReplyManager = mockReplyManager;
+
+        EventBus.getDefault().register(this);
     }
 
     public void create(ThreadPresenterCallback threadPresenterCallback) {
@@ -317,6 +323,12 @@ public class ThreadPresenter
             threadPresenterCallback.showLoading();
             chanLoader.requestData();
         }
+    }
+
+    @Subscribe
+    public void onEvent(RefreshUIMessage message) {
+        showToast(context, "Refreshing; new fonts!");
+        chanLoader.requestData();
     }
 
     public void onForegroundChanged(boolean foreground) {

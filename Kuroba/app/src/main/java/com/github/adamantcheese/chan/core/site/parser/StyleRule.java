@@ -26,8 +26,10 @@ import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
 import android.text.style.UnderlineSpan;
 
+import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostLinkable;
+import com.github.adamantcheese.chan.core.repository.TypefaceRepository;
 import com.github.adamantcheese.chan.ui.text.AbsoluteSizeSpanHashed;
 import com.github.adamantcheese.chan.ui.text.BackgroundColorSpanHashed;
 import com.github.adamantcheese.chan.ui.text.CustomTypefaceSpan;
@@ -69,7 +71,7 @@ public class StyleRule {
     private boolean bold;
     private boolean italic;
     private boolean monospace;
-    private Typeface typeface;
+    private String typefaceName;
     private int size = 0;
 
     private PostLinkable.Type link = null;
@@ -149,8 +151,8 @@ public class StyleRule {
         return this;
     }
 
-    public StyleRule typeface(Typeface typeface) {
-        this.typeface = typeface;
+    public StyleRule typeface(String typefaceName) {
+        this.typefaceName = typefaceName;
         return this;
     }
 
@@ -238,7 +240,9 @@ public class StyleRule {
             spansToApply.add(new TypefaceSpan("monospace"));
         }
 
-        if (typeface != null) {
+        if (typefaceName != null) {
+            //this is dynamically loaded and requested to save on space, if not needed
+            Typeface typeface = Chan.instance(TypefaceRepository.class).getTypeface(this.typefaceName);
             spansToApply.add(new CustomTypefaceSpan("", typeface));
         }
 

@@ -24,6 +24,7 @@ import android.app.ProgressDialog;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.graphics.Typeface;
 import android.os.Build;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
@@ -37,6 +38,7 @@ import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 
+import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
 import com.github.adamantcheese.chan.controller.Controller;
@@ -48,6 +50,7 @@ import com.github.adamantcheese.chan.core.model.PostLinkable;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.model.orm.PostHide;
 import com.github.adamantcheese.chan.core.presenter.ThreadPresenter;
+import com.github.adamantcheese.chan.core.repository.TypefaceRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.core.site.http.Reply;
@@ -165,7 +168,8 @@ public class ThreadLayout
         postPopupHelper = new PostPopupHelper(getContext(), presenter, this);
         imageReencodingHelper = new ImageOptionsHelper(getContext(), this);
         removedPostsHelper = new RemovedPostsHelper(getContext(), presenter, this);
-        errorText.setTypeface(ThemeHelper.getTheme().mainFont);
+        Typeface mainFont = Chan.instance(TypefaceRepository.class).getTypeface(ThemeHelper.getTheme().mainFontName);
+        errorText.setTypeface(mainFont);
         errorRetryButton.setOnClickListener(this);
 
         // Setup

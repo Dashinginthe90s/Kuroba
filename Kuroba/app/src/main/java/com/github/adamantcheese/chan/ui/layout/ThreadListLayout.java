@@ -24,6 +24,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.AttributeSet;
@@ -39,6 +40,7 @@ import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.manager.WatchManager;
 import com.github.adamantcheese.chan.core.model.ChanThread;
@@ -47,6 +49,7 @@ import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.model.orm.Pin;
 import com.github.adamantcheese.chan.core.presenter.ReplyPresenter;
+import com.github.adamantcheese.chan.core.repository.TypefaceRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.http.Reply;
 import com.github.adamantcheese.chan.core.site.sites.chan4.Chan4;
@@ -132,7 +135,8 @@ public class ThreadListLayout
 
         // View setup
         reply.setCallback(this);
-        searchStatus.setTypeface(ThemeHelper.getTheme().mainFont);
+        Typeface mainFont = Chan.instance(TypefaceRepository.class).getTypeface(ThemeHelper.getTheme().mainFontName);
+        searchStatus.setTypeface(mainFont);
     }
 
     public void setCallbacks(

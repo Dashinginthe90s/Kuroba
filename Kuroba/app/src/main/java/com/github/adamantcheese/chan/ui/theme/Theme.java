@@ -21,7 +21,6 @@ import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.widget.ImageView;
 
@@ -44,8 +43,8 @@ public class Theme {
     public boolean altFontIsMain = false;
     public ThemeHelper.PrimaryColor primaryColor;
     public ThemeHelper.PrimaryColor accentColor;
-    public Typeface mainFont;
-    public Typeface altFont;
+    public String mainFontName;
+    public String altFontName;
 
     public int textPrimary;
     public int textSecondary;
@@ -83,15 +82,30 @@ public class Theme {
             String name,
             int resValue,
             ThemeHelper.PrimaryColor primaryColor,
-            Typeface mainFont,
-            Typeface altFont
+            String mainFontName,
+            String altFontName
     ) {
         this.displayName = displayName;
         this.name = name;
         this.resValue = resValue;
         this.primaryColor = primaryColor;
-        this.mainFont = mainFont;
-        this.altFont = altFont;
+        this.mainFontName = mainFontName;
+        this.altFontName = altFontName;
+        accentColor = ThemeHelper.PrimaryColor.TEAL;
+
+        resolveSpanColors();
+        resolveDrawables();
+    }
+
+    public Theme(
+            String displayName, String name, int resValue, ThemeHelper.PrimaryColor primaryColor
+    ) {
+        this.displayName = displayName;
+        this.name = name;
+        this.resValue = resValue;
+        this.primaryColor = primaryColor;
+        this.mainFontName = "roboto-medium";
+        this.altFontName = "roboto-condensed";
         accentColor = ThemeHelper.PrimaryColor.TEAL;
 
         resolveSpanColors();

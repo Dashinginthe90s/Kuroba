@@ -35,12 +35,14 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.vectordrawable.graphics.drawable.Animatable2Compat;
 import androidx.vectordrawable.graphics.drawable.AnimatedVectorDrawableCompat;
 
+import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.manager.WatchManager;
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.model.orm.Pin;
 import com.github.adamantcheese.chan.core.model.orm.PinType;
 import com.github.adamantcheese.chan.core.model.orm.SavedThread;
+import com.github.adamantcheese.chan.core.repository.TypefaceRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.helper.PinHelper;
 import com.github.adamantcheese.chan.ui.helper.PostHelper;
@@ -444,12 +446,13 @@ public class DrawerAdapter
 
         private PinViewHolder(View itemView) {
             super(itemView);
+            Typeface mainFont = Chan.instance(TypefaceRepository.class).getTypeface(ThemeHelper.getTheme().mainFontName);
             image = itemView.findViewById(R.id.thumb);
             image.setCircular(true);
             textView = itemView.findViewById(R.id.text);
-            textView.setTypeface(ThemeHelper.getTheme().mainFont);
+            textView.setTypeface(mainFont);
             watchCountText = itemView.findViewById(R.id.watch_count);
-            watchCountText.setTypeface(ThemeHelper.getTheme().mainFont);
+            watchCountText.setTypeface(mainFont);
             threadDownloadIcon = itemView.findViewById(R.id.thread_download_icon);
 
             setRoundItemBackground(watchCountText);
@@ -484,8 +487,9 @@ public class DrawerAdapter
 
         private HeaderHolder(View itemView) {
             super(itemView);
+            Typeface mainFont = Chan.instance(TypefaceRepository.class).getTypeface(ThemeHelper.getTheme().mainFontName);
             text = itemView.findViewById(R.id.text);
-            text.setTypeface(ThemeHelper.getTheme().mainFont);
+            text.setTypeface(mainFont);
             clear = itemView.findViewById(R.id.clear);
             setRoundItemBackground(clear);
             clear.setOnClickListener(v -> callback.onHeaderClicked(HeaderAction.CLEAR));
@@ -508,9 +512,10 @@ public class DrawerAdapter
 
         private LinkHolder(View itemView) {
             super(itemView);
+            Typeface mainFont = Chan.instance(TypefaceRepository.class).getTypeface(ThemeHelper.getTheme().mainFontName);
             image = itemView.findViewById(R.id.image);
             text = itemView.findViewById(R.id.text);
-            text.setTypeface(ThemeHelper.getTheme().mainFont);
+            text.setTypeface(mainFont);
 
             itemView.setOnClickListener(v -> {
                 switch (getAdapterPosition()) {

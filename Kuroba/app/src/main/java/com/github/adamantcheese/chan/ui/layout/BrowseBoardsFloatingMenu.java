@@ -22,6 +22,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Point;
 import android.graphics.PorterDuff;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -43,10 +44,12 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.RecyclerView.ViewHolder;
 
+import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.presenter.BoardsMenuPresenter;
 import com.github.adamantcheese.chan.core.presenter.BoardsMenuPresenter.Item;
+import com.github.adamantcheese.chan.core.repository.TypefaceRepository;
 import com.github.adamantcheese.chan.core.site.ChunkDownloaderSiteProperties;
 import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.core.site.SiteIcon;
@@ -461,7 +464,8 @@ public class BrowseBoardsFloatingMenu
             text = itemView.findViewById(R.id.text);
 
             // View setup
-            text.setTypeface(ThemeHelper.getTheme().mainFont);
+            Typeface mainFont = Chan.instance(TypefaceRepository.class).getTypeface(ThemeHelper.getTheme().mainFontName);
+            text.setTypeface(mainFont);
         }
 
         public void bind(Site site) {
@@ -499,7 +503,8 @@ public class BrowseBoardsFloatingMenu
             text = (TextView) itemView;
 
             // View setup
-            text.setTypeface(ThemeHelper.getTheme().mainFont);
+            Typeface mainFont = Chan.instance(TypefaceRepository.class).getTypeface(ThemeHelper.getTheme().mainFontName);
+            text.setTypeface(mainFont);
         }
 
         public void bind(Board board) {

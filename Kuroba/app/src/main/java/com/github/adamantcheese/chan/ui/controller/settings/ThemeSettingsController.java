@@ -20,6 +20,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.text.SpannableString;
 import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
@@ -34,6 +35,7 @@ import android.widget.TextView;
 import androidx.appcompat.view.ContextThemeWrapper;
 import androidx.viewpager.widget.ViewPager;
 
+import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
 import com.github.adamantcheese.chan.controller.Controller;
@@ -42,6 +44,7 @@ import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.model.PostLinkable;
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
+import com.github.adamantcheese.chan.core.repository.TypefaceRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.common.DefaultPostParser;
 import com.github.adamantcheese.chan.core.site.parser.CommentParser;
@@ -184,8 +187,7 @@ public class ThemeSettingsController
         textView.setText(TextUtils.concat(getString(R.string.setting_theme_explanation), "\n", changeAccentColor));
         textView.setMovementMethod(LinkMovementMethod.getInstance());
 
-        Adapter adapter = new Adapter();
-        pager.setAdapter(adapter);
+        pager.setAdapter(new Adapter());
 
         ChanSettings.ThemeColor currentSettingsTheme = ChanSettings.getThemeAndColor();
         for (int i = 0; i < themes.size(); i++) {
@@ -381,7 +383,9 @@ public class ThemeSettingsController
             @SuppressLint("ViewHolder")
             TextView textView = (TextView) inflate(parent.getContext(), R.layout.toolbar_menu_item, parent, false);
             textView.setText(getItem(position));
-            textView.setTypeface(ThemeHelper.getTheme().mainFont);
+            Typeface mainFont =
+                    Chan.instance(TypefaceRepository.class).getTypeface(ThemeHelper.getTheme().mainFontName);
+            textView.setTypeface(mainFont);
 
             ColorsAdapterItem color = (ColorsAdapterItem) items.get(position).getId();
 

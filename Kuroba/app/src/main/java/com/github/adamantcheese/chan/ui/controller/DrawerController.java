@@ -41,6 +41,7 @@ import com.github.adamantcheese.chan.core.model.orm.SavedThread;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.adapter.DrawerAdapter;
 import com.github.adamantcheese.chan.ui.controller.settings.MainSettingsController;
+import com.github.adamantcheese.chan.ui.helper.RefreshUIMessage;
 import com.google.android.material.snackbar.Snackbar;
 
 import org.greenrobot.eventbus.EventBus;
@@ -310,6 +311,11 @@ public class DrawerController
     public void onEvent(PinMessages.PinsChangedMessage message) {
         drawerAdapter.notifyDataSetChanged();
         updateBadge();
+    }
+
+    @Subscribe
+    public void onEvent(RefreshUIMessage message) {
+        drawerAdapter.notifyDataSetChanged();
     }
 
     public void setDrawerEnabled(boolean enabled) {

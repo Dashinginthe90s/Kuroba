@@ -57,6 +57,7 @@ import androidx.annotation.NonNull;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.ImageLoader.ImageContainer;
 import com.android.volley.toolbox.ImageLoader.ImageListener;
+import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.cache.CacheHandler;
 import com.github.adamantcheese.chan.core.image.ImageLoaderV2;
@@ -65,6 +66,7 @@ import com.github.adamantcheese.chan.core.model.PostHttpIcon;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.model.PostLinkable;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
+import com.github.adamantcheese.chan.core.repository.TypefaceRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.parser.CommentParserHelper;
 import com.github.adamantcheese.chan.ui.helper.PostHelper;
@@ -455,12 +457,13 @@ public class PostCell
             commentText = post.comment;
         }
 
+        Typeface altFont = Chan.instance(TypefaceRepository.class).getTypeface(theme.altFontName);
         if (!theme.altFontIsMain && ChanSettings.fontAlternate.get()) {
-            comment.setTypeface(theme.altFont);
+            comment.setTypeface(altFont);
         }
 
         if (theme.altFontIsMain) {
-            comment.setTypeface(ChanSettings.fontAlternate.get() ? Typeface.DEFAULT : theme.altFont);
+            comment.setTypeface(ChanSettings.fontAlternate.get() ? Typeface.DEFAULT : altFont);
         }
 
         comment.setTextColor(theme.textPrimary);

@@ -17,6 +17,7 @@
 package com.github.adamantcheese.chan.ui.view;
 
 import android.content.Context;
+import android.graphics.Typeface;
 import android.view.Gravity;
 import android.view.View;
 import android.view.View.MeasureSpec;
@@ -30,7 +31,9 @@ import android.widget.TextView;
 
 import androidx.appcompat.widget.ListPopupWindow;
 
+import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
+import com.github.adamantcheese.chan.core.repository.TypefaceRepository;
 import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 import com.github.adamantcheese.chan.utils.Logger;
 
@@ -278,7 +281,8 @@ public class FloatingMenu {
             textView.setTextColor(getAttrColor(getContext(),
                     item.isEnabled() ? R.attr.text_color_primary : R.attr.text_color_hint
             ));
-            textView.setTypeface(ThemeHelper.getTheme().mainFont);
+            Typeface mainFont = Chan.instance(TypefaceRepository.class).getTypeface(ThemeHelper.getTheme().mainFontName);
+            textView.setTypeface(mainFont);
 
             return textView;
         }
