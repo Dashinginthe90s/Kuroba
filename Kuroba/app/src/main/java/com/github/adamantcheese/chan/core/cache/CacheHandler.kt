@@ -18,6 +18,7 @@ package com.github.adamantcheese.chan.core.cache
 
 import android.os.Environment
 import android.text.TextUtils
+import com.github.adamantcheese.chan.core.di.AppModule.getCacheDir
 import com.github.adamantcheese.chan.core.settings.ChanSettings
 import com.github.adamantcheese.chan.utils.AndroidUtils
 import com.github.adamantcheese.chan.utils.BackgroundUtils
@@ -26,7 +27,7 @@ import com.github.adamantcheese.chan.utils.ConversionUtils.intToCharArray
 import com.github.adamantcheese.chan.utils.JavaUtils.stringMD5hash
 import com.github.adamantcheese.chan.utils.Logger
 import com.github.adamantcheese.chan.utils.StringUtils
-import com.github.adamantcheese.chan.utils.StringUtils.UTCFormat;
+import com.github.adamantcheese.chan.utils.StringUtils.UTCFormat
 import com.github.k1rakishou.fsaf.FileManager
 import com.github.k1rakishou.fsaf.file.AbstractFile
 import com.github.k1rakishou.fsaf.file.FileDescriptorMode
@@ -38,7 +39,6 @@ import java.io.FileReader
 import java.io.IOException
 import java.io.PrintWriter
 import java.util.*
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit.MINUTES
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -66,8 +66,7 @@ import java.util.concurrent.atomic.AtomicLong
 class CacheHandler(
         private val fileManager: FileManager,
         private val cacheDirFile: RawFile,
-        private val chunksCacheDirFile: RawFile,
-        private val executor: ExecutorService
+        private val chunksCacheDirFile: RawFile
 ) {
     /**
      * An estimation of the current size of the directory. Used to check if trim must be run
@@ -92,7 +91,7 @@ class CacheHandler(
 
     private fun clearChunksCacheDir() {
         if (trimChunksRunning.compareAndSet(false, true)) {
-            executor.execute {
+            BackgroundUtils.backgroundService.execute {
                 try {
                     fileManager.deleteContent(chunksCacheDirFile)
                 } finally {
@@ -107,27 +106,33 @@ class CacheHandler(
     }
 
     /**
-     * Either returns already downloaded file or creates an empty new one on the disk (also creates
-     * cache file meta with default parameters)
+     * Either returns already downloaded file or creates an empty new one on the disk
+     * Also creates a cache meta file with default parameters
      * */
     fun getOrCreateCacheFile(url: HttpUrl): RawFile? {
         createDirectories()
-        var cacheFile = getCacheFileInternal(url)
 
-        return try {
+        var cacheFile = getCacheFileInternal(url)
+        try {
             if (!fileManager.exists(cacheFile)) {
                 val createdFile = fileManager.create(cacheFile) as RawFile?
-                        ?: throw IOException(
-                                "Couldn't create cache file, path = ${cacheFile.getFullPath()}")
+                        ?: throw IOException("Couldn't create cache file!")
 
                 cacheFile = createdFile
             }
+        } catch (error: IOException) {
+            Logger.e(TAG, "Error trying to get or create cache file: ${cacheFile.getFullPath()}:", error)
+            Logger.e(TAG, "Cache directory exists: " + fileManager.exists(fileManager.fromRawFile(getCacheDir())))
+            Logger.e(TAG, "Cache file directory exists: " + fileManager.exists(cacheDirFile))
+            deleteCacheFile(cacheFile)
+            return null
+        }
 
-            val cacheFileMeta = getCacheFileMetaInternal(url)
+        val cacheFileMeta = getCacheFileMetaInternal(url)
+        try {
             if (!fileManager.exists(cacheFileMeta)) {
                 val createdFile = fileManager.create(cacheFileMeta) as RawFile?
-                        ?: throw IOException(
-                                "Couldn't create cache file meta, path = ${cacheFileMeta.getFullPath()}")
+                        ?: throw IOException("Couldn't create cache file meta!")
 
                 val result = updateCacheFileMeta(
                         createdFile,
@@ -137,16 +142,18 @@ class CacheHandler(
                 )
 
                 if (!result) {
-                    throw IOException("Cache file meta update failed")
+                    throw IOException("Cache file meta update failed!")
                 }
             }
-
-            cacheFile
         } catch (error: IOException) {
-            Logger.e(TAG, "Error while trying to get or create cache file", error)
+            Logger.e(TAG, "Error trying to get or create cache meta: ${cacheFileMeta.getFullPath()}:", error)
+            Logger.e(TAG, "Cache directory exists: " + fileManager.exists(fileManager.fromRawFile(getCacheDir())))
+            Logger.e(TAG, "Cache meta directory exists: " + fileManager.exists(chunksCacheDirFile))
             deleteCacheFile(cacheFile)
-            null
+            return null
         }
+
+        return cacheFile
     }
 
     fun getChunkCacheFileOrNull(chunkStart: Long, chunkEnd: Long, url: HttpUrl): RawFile? {
@@ -292,7 +299,7 @@ class CacheHandler(
                 && now - trimTime > MIN_TRIM_INTERVAL
                 && trimRunning.compareAndSet(false, true)
         ) {
-            executor.execute {
+            BackgroundUtils.backgroundService.execute {
                 try {
                     trim()
                 } catch (e: Exception) {
@@ -469,8 +476,8 @@ class CacheHandler(
                 return@synchronized false
             }
 
-            return@synchronized outputStream.use { stream ->
-                return@use PrintWriter(stream).use { pw ->
+            return@synchronized outputStream.use fileStream@{ stream ->
+                return@fileStream PrintWriter(stream).use printStream@{ pw ->
                     val toWrite = String.format(
                             Locale.ENGLISH,
                             CACHE_FILE_META_CONTENT_FORMAT,
@@ -483,7 +490,7 @@ class CacheHandler(
                     pw.write(toWrite)
                     pw.flush()
 
-                    return@use true
+                    return@printStream true
                 }
             }
         }
@@ -657,7 +664,7 @@ class CacheHandler(
             return
         }
 
-        executor.submit { recalculateSize() }
+        BackgroundUtils.backgroundService.submit { recalculateSize() }
     }
 
     private fun recalculateSize() {

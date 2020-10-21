@@ -20,22 +20,18 @@ import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.model.orm.Pin;
 import com.j256.ormlite.stmt.DeleteBuilder;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
-import javax.inject.Inject;
-
-import static com.github.adamantcheese.chan.Chan.inject;
-
 public class DatabasePinManager {
-    @Inject
     DatabaseHelper helper;
     private DatabaseLoadableManager databaseLoadableManager;
 
-    public DatabasePinManager(DatabaseLoadableManager databaseLoadableManager) {
-        inject(this);
+    public DatabasePinManager(DatabaseHelper helper, DatabaseLoadableManager databaseLoadableManager) {
+        this.helper = helper;
         this.databaseLoadableManager = databaseLoadableManager;
     }
 
@@ -45,32 +41,25 @@ public class DatabasePinManager {
         }
 
         return () -> {
-            helper.pinDao.create(pin);
+            helper.getPinDao().create(pin);
             return pin;
         };
     }
 
     public Callable<Void> deletePin(final Pin pin) {
-        return () -> {
-            helper.pinDao.delete(pin);
-
-            return null;
-        };
+        return deletePins(Collections.singletonList(pin));
     }
 
     public Callable<Void> deletePins(final List<Pin> pins) {
         return () -> {
-            for (Pin pin : pins) {
-                helper.pinDao.delete(pin);
-            }
-
+            helper.getPinDao().delete(pins);
             return null;
         };
     }
 
     public Callable<Pin> updatePin(final Pin pin) {
         return () -> {
-            helper.pinDao.update(pin);
+            helper.getPinDao().update(pin);
             return pin;
         };
     }
@@ -78,7 +67,7 @@ public class DatabasePinManager {
     public Callable<List<Pin>> updatePins(final List<Pin> pins) {
         return () -> {
             for (Pin pin : pins) {
-                helper.pinDao.update(pin);
+                helper.getPinDao().update(pin);
             }
 
             return null;
@@ -87,7 +76,7 @@ public class DatabasePinManager {
 
     public Callable<List<Pin>> getPins() {
         return () -> {
-            List<Pin> list = helper.pinDao.queryForAll();
+            List<Pin> list = helper.getPinDao().queryForAll();
             for (int i = 0; i < list.size(); i++) {
                 Pin p = list.get(i);
                 p.loadable = databaseLoadableManager.refreshForeign(p.loadable);
@@ -104,7 +93,7 @@ public class DatabasePinManager {
                 loadableIdSet.add(loadable.id);
             }
 
-            DeleteBuilder<Pin, Integer> builder = helper.pinDao.deleteBuilder();
+            DeleteBuilder<Pin, Integer> builder = helper.getPinDao().deleteBuilder();
             builder.where().in("loadable_id", loadableIdSet);
             builder.delete();
 
@@ -113,6 +102,6 @@ public class DatabasePinManager {
     }
 
     public Callable<Pin> getPinByLoadableId(int loadableId) {
-        return () -> helper.pinDao.queryBuilder().where().eq("loadable_id", loadableId).queryForFirst();
+        return () -> helper.getPinDao().queryBuilder().where().eq("loadable_id", loadableId).queryForFirst();
     }
 }

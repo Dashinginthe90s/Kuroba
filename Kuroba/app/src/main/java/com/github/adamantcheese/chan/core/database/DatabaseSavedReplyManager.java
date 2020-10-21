@@ -30,11 +30,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 
-import javax.inject.Inject;
-
-import static com.github.adamantcheese.chan.Chan.inject;
-import static com.github.adamantcheese.chan.Chan.instance;
-
 /**
  * Saved replies are posts-password combinations used to track what posts are posted by the app,
  * and used to delete posts.
@@ -43,14 +38,31 @@ public class DatabaseSavedReplyManager {
     private static final long TRIM_TRIGGER = 250;
     private static final long TRIM_COUNT = 50;
 
-    @Inject
     DatabaseHelper helper;
 
     // map of post number to saved replies
     private final Map<Integer, List<SavedReply>> savedRepliesByNo = new HashMap<>();
 
-    public DatabaseSavedReplyManager() {
-        inject(this);
+    public DatabaseSavedReplyManager(DatabaseHelper helper) {
+        this.helper = helper;
+        DatabaseUtils.runTask(DatabaseUtils.trimTable(helper.getSavedReplyDao(), TRIM_TRIGGER, TRIM_COUNT));
+        DatabaseUtils.runTask(() -> {
+            final List<SavedReply> all = helper.getSavedReplyDao().queryForAll();
+
+            synchronized (savedRepliesByNo) {
+                savedRepliesByNo.clear();
+                for (SavedReply savedReply : all) {
+                    List<SavedReply> list = savedRepliesByNo.get(savedReply.no);
+                    if (list == null) {
+                        list = new ArrayList<>(1);
+                        savedRepliesByNo.put(savedReply.no, list);
+                    }
+
+                    list.add(savedReply);
+                }
+            }
+            return null;
+        });
     }
 
     /**
@@ -67,40 +79,9 @@ public class DatabaseSavedReplyManager {
         return getSavedReply(board, postNo) != null;
     }
 
-    public Callable<Void> load() {
-        return () -> {
-            instance(DatabaseManager.class).trimTable(helper.savedDao, TRIM_TRIGGER, TRIM_COUNT);
-            final List<SavedReply> all = helper.savedDao.queryForAll();
-
-            synchronized (savedRepliesByNo) {
-                savedRepliesByNo.clear();
-                for (SavedReply savedReply : all) {
-                    List<SavedReply> list = savedRepliesByNo.get(savedReply.no);
-                    if (list == null) {
-                        list = new ArrayList<>(1);
-                        savedRepliesByNo.put(savedReply.no, list);
-                    }
-
-                    list.add(savedReply);
-                }
-            }
-            return null;
-        };
-    }
-
-    public Callable<Void> clearSavedReplies() {
-        return () -> {
-            TableUtils.clearTable(helper.getConnectionSource(), SavedReply.class);
-            synchronized (savedRepliesByNo) {
-                savedRepliesByNo.clear();
-            }
-            return null;
-        };
-    }
-
     public Callable<SavedReply> saveReply(SavedReply savedReply) {
         return () -> {
-            helper.savedDao.create(savedReply);
+            helper.getSavedReplyDao().create(savedReply);
             synchronized (savedRepliesByNo) {
                 List<SavedReply> list = savedRepliesByNo.get(savedReply.no);
                 if (list == null) {
@@ -116,7 +97,7 @@ public class DatabaseSavedReplyManager {
 
     public Callable<SavedReply> unsaveReply(SavedReply savedReply) {
         return () -> {
-            helper.savedDao.delete(savedReply);
+            helper.getSavedReplyDao().delete(savedReply);
             synchronized (savedRepliesByNo) {
                 List<SavedReply> list = savedRepliesByNo.get(savedReply.no);
                 if (list != null) {
@@ -146,7 +127,7 @@ public class DatabaseSavedReplyManager {
 
     public Callable<Void> deleteSavedReplies(Site site) {
         return () -> {
-            DeleteBuilder<SavedReply, Integer> builder = helper.savedDao.deleteBuilder();
+            DeleteBuilder<SavedReply, Integer> builder = helper.getSavedReplyDao().deleteBuilder();
             builder.where().eq("site", site.id());
             builder.delete();
 

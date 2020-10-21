@@ -122,11 +122,12 @@ public class Wired7
         }
 
         @Override
-        public void setupPost(Reply reply, MultipartHttpCall call) {
-            call.parameter("board", reply.loadable.boardCode);
+        public void setupPost(Loadable loadable, MultipartHttpCall call) {
+            Reply reply = loadable.draft;
+            call.parameter("board", loadable.boardCode);
 
-            if (reply.loadable.isThreadMode()) {
-                call.parameter("thread", String.valueOf(reply.loadable.no));
+            if (loadable.isThreadMode()) {
+                call.parameter("thread", String.valueOf(loadable.no));
             }
 
             // Added with VichanAntispam.
@@ -162,7 +163,10 @@ public class Wired7
                 replyResponse.errorMessage = Jsoup.parse(err.group(1)).body().text();
             } else {
                 HttpUrl url = response.request().url();
-                Matcher m = Pattern.compile("/\\w+/\\w+/(\\d+)(.html)?").matcher(url.encodedPath());
+                StringBuilder urlPath = new StringBuilder();
+                //noinspection KotlinInternalInJava
+                HttpUrl.Companion.toPathString$okhttp(url.pathSegments(), urlPath);
+                Matcher m = Pattern.compile("/\\w+/\\w+/(\\d+)(.html)?").matcher(urlPath);
                 try {
                     if (m.find()) {
                         replyResponse.threadNo = Integer.parseInt(m.group(1));

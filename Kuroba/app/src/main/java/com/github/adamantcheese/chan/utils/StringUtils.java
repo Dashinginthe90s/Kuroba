@@ -12,14 +12,13 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.TimeZone;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
+import kotlin.io.ByteStreamsKt;
 import okhttp3.HttpUrl;
+import okio.ByteString;
+import okio.internal.ByteStringKt;
 
 public class StringUtils {
-    private static final Pattern IMAGE_THUMBNAIL_EXTRACTOR_PATTERN = Pattern.compile("/(\\d{12,32}+)s.(.*)");
-    private static final char[] HEX_ARRAY = "0123456789abcdef".toCharArray();
     @SuppressWarnings("RegExpRedundantEscape")
     private static final String RESERVED_CHARACTERS = "|?*<\":>+\\[\\]/'\\\\\\s";
     private static final String RESERVED_CHARACTERS_DIR = "[" + RESERVED_CHARACTERS + "." + "]";
@@ -29,40 +28,6 @@ public class StringUtils {
 
     static {
         UTCFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-    }
-
-    public static String bytesToHex(byte[] bytes) {
-        char[] hexChars = new char[bytes.length * 2];
-
-        for (int j = 0; j < bytes.length; j++) {
-            int v = bytes[j] & 0xFF;
-            hexChars[j * 2] = HEX_ARRAY[v >>> 4];
-            hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
-        }
-
-        return new String(hexChars);
-    }
-
-    @Nullable
-    public static String convertThumbnailUrlToFilenameOnDisk(@Nullable HttpUrl url) {
-        if (url == null) return null;
-        Matcher matcher = IMAGE_THUMBNAIL_EXTRACTOR_PATTERN.matcher(url.toString());
-        if (matcher.find()) {
-            String filename = matcher.group(1);
-            String extension = matcher.group(2);
-
-            if (filename == null || extension == null) {
-                return null;
-            }
-
-            if (filename.isEmpty() || extension.isEmpty()) {
-                return null;
-            }
-
-            return String.format("%s_thumbnail.%s", filename, extension);
-        }
-
-        return null;
     }
 
     @Nullable
@@ -98,16 +63,12 @@ public class StringUtils {
 
     @Nullable
     public static String decodeBase64(String base64Encoded) {
-        byte[] bytes;
-
         try {
-            bytes = Base64.decode(base64Encoded, Base64.DEFAULT);
+            return new ByteString(Base64.decode(base64Encoded, Base64.DEFAULT)).hex();
         } catch (Throwable error) {
             Logger.e("decodeBase64", "Error decoding base64 string! Msg: " + error.getMessage());
             return null;
         }
-
-        return bytesToHex(bytes);
     }
 
     public static String maskPostNo(int postNo) {
@@ -143,6 +104,15 @@ public class StringUtils {
     public static boolean endsWithAny(String s, String[] suffixes) {
         for (String suffix : suffixes) {
             if (s.endsWith(suffix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean containsAny(String s, String[] contains) {
+        for (String contain : contains) {
+            if (s.contains(contain)) {
                 return true;
             }
         }

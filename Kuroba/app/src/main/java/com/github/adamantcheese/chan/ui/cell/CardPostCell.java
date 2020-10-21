@@ -17,8 +17,6 @@
 package com.github.adamantcheese.chan.ui.cell;
 
 import android.content.Context;
-import android.text.InputFilter;
-import android.text.InputFilter.LengthFilter;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.view.View;
@@ -31,13 +29,14 @@ import androidx.cardview.widget.CardView;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.github.adamantcheese.chan.R;
-import com.github.adamantcheese.chan.core.manager.PageRequestManager;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
+import com.github.adamantcheese.chan.core.repository.PageRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.common.CommonDataStructs.ChanPage;
 import com.github.adamantcheese.chan.core.site.parser.CommentParserHelper;
+import com.github.adamantcheese.chan.core.site.parser.CommentParserHelper.InvalidateFunction;
 import com.github.adamantcheese.chan.ui.layout.FixedRatioLinearLayout;
 import com.github.adamantcheese.chan.ui.theme.Theme;
 import com.github.adamantcheese.chan.ui.view.FloatingMenu;
@@ -50,7 +49,6 @@ import java.util.List;
 
 import okhttp3.Call;
 
-import static com.github.adamantcheese.chan.Chan.instance;
 import static com.github.adamantcheese.chan.ui.adapter.PostsFilter.Order.isNotBumpOrder;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
@@ -58,7 +56,7 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 public class CardPostCell
         extends CardView
         implements PostCellInterface, View.OnClickListener {
-    private static final int COMMENT_MAX_LENGTH = 200;
+    private static final int COMMENT_MAX_LINES = 10;
 
     private boolean bound;
     private Post post;
@@ -74,6 +72,7 @@ public class CardPostCell
     private TextView replies;
     private ImageView options;
     private View filterMatchColor;
+    private RecyclerView recyclerView;
 
     public CardPostCell(Context context) {
         super(context);
@@ -203,6 +202,7 @@ public class CardPostCell
         this.post = post;
         this.callback = callback;
         this.theme = theme;
+        this.recyclerView = attachedTo;
 
         bindPost(theme, post);
 
@@ -230,10 +230,10 @@ public class CardPostCell
 
         if (post.image() != null && !ChanSettings.textOnly.get()) {
             thumbView.setVisibility(VISIBLE);
-            thumbView.setPostImage(loadable, post.image());
+            thumbView.setPostImage(post.image());
         } else {
             thumbView.setVisibility(GONE);
-            thumbView.setPostImage(loadable, null);
+            thumbView.setPostImage(null);
         }
 
         if (post.filterHighlightedColor != 0) {
@@ -252,15 +252,17 @@ public class CardPostCell
         }
 
         if (ChanSettings.getBoardColumnCount() != 1) {
-            comment.setFilters(new LengthFilter[]{new LengthFilter(COMMENT_MAX_LENGTH)});
+            comment.setMaxLines(COMMENT_MAX_LINES);
+            comment.setEllipsize(TextUtils.TruncateAt.END);
         } else {
-            comment.setFilters(new InputFilter[]{});
+            comment.setMaxLines(Integer.MAX_VALUE);
+            comment.setEllipsize(null);
         }
         comment.setText(post.comment);
 
         String status = getString(R.string.card_stats, post.getReplies(), post.getImagesCount());
         if (!ChanSettings.neverShowPages.get()) {
-            ChanPage p = instance(PageRequestManager.class).getPage(post);
+            ChanPage p = PageRepository.getPage(post);
             if (p != null && isNotBumpOrder(ChanSettings.boardOrder.get())) {
                 status += " Pg " + p.page;
             }
@@ -270,13 +272,37 @@ public class CardPostCell
 
         CommentParserHelper.addMathSpans(post, comment);
         if (post.needsExtraParse && extraCalls == null) {
-            extraCalls = CommentParserHelper.replaceYoutubeLinks(theme, post, comment);
+            extraCalls = CommentParserHelper.replaceMediaLinks(theme, post, new InvalidateFunction() { // TODO move this into an embedding class
+                private boolean fullInvalidate;
+                private int count = 0;
+
+                @Override
+                public void invalidate(boolean fullInvalidate) {
+                    synchronized (this) {
+                        this.fullInvalidate |= fullInvalidate; // if any call needs a full invalidate
+                        count++; // total calls completed
+                    }
+                    // if extraCalls is null, just let the refresh go through
+                    if (extraCalls != null && extraCalls.size() != count) return; // still completing calls
+
+                    if (!this.fullInvalidate) {
+                        comment.setText(post.comment);
+                        comment.postInvalidate();
+                    } else {
+                        if (!recyclerView.isComputingLayout() && recyclerView.getAdapter() != null) {
+                            recyclerView.getAdapter()
+                                    .notifyItemChanged(recyclerView.getChildAdapterPosition(CardPostCell.this));
+                        } else {
+                            post(() -> invalidate(true));
+                        }
+                    }
+                }
+            });
         }
     }
 
     private void setCompact(boolean compact) {
-        int textReduction = compact ? -2 : 0;
-        int textSizeSp = Integer.parseInt(ChanSettings.fontSize.get()) + textReduction;
+        int textSizeSp = ChanSettings.fontSize.get() + (compact ? -2 : 0);
         title.setTextSize(textSizeSp);
         comment.setTextSize(textSizeSp);
         replies.setTextSize(textSizeSp);

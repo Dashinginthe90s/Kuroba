@@ -21,21 +21,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 
-import javax.inject.Inject;
-
-import static com.github.adamantcheese.chan.Chan.inject;
-
 public class DatabaseBoardManager {
-    @Inject
     DatabaseHelper helper;
 
-    public DatabaseBoardManager() {
-        inject(this);
+    public DatabaseBoardManager(DatabaseHelper helper) {
+        this.helper = helper;
     }
 
     public Callable<Void> updateIncludingUserFields(final Board board) {
         return () -> {
-            helper.boardsDao.update(board);
+            helper.getBoardDao().update(board);
 
             return null;
         };
@@ -44,7 +39,7 @@ public class DatabaseBoardManager {
     public Callable<Void> updateIncludingUserFields(final Boards boards) {
         return () -> {
             for (Board board : boards) {
-                helper.boardsDao.update(board);
+                helper.getBoardDao().update(board);
             }
 
             return null;
@@ -56,7 +51,7 @@ public class DatabaseBoardManager {
             SelectArg id = new SelectArg();
             SelectArg order = new SelectArg();
 
-            UpdateBuilder<Board, Integer> updateBuilder = helper.boardsDao.updateBuilder();
+            UpdateBuilder<Board, Integer> updateBuilder = helper.getBoardDao().updateBuilder();
             updateBuilder.where().eq("id", id);
             updateBuilder.updateColumnValue("order", order);
             PreparedUpdate<Board> statement = updateBuilder.prepare();
@@ -66,7 +61,7 @@ public class DatabaseBoardManager {
 
                 id.setValue(board.id);
                 order.setValue(i);
-                helper.boardsDao.update(statement);
+                helper.getBoardDao().update(statement);
             }
 
             return null;
@@ -75,7 +70,7 @@ public class DatabaseBoardManager {
 
     public Callable<Boolean> createAll(final Site site, final Boards boards) {
         return () -> {
-            List<Board> allFromDb = helper.boardsDao.queryForEq("site", site.id());
+            List<Board> allFromDb = helper.getBoardDao().queryForEq("site", site.id());
             Map<String, Board> byCodeFromDb = new HashMap<>();
             for (Board board : allFromDb) {
                 byCodeFromDb.put(board.code, board);
@@ -97,7 +92,7 @@ public class DatabaseBoardManager {
 
             if (!toCreate.isEmpty()) {
                 for (Board board : toCreate) {
-                    helper.boardsDao.create(board);
+                    helper.getBoardDao().create(board);
                 }
             }
 
@@ -107,7 +102,7 @@ public class DatabaseBoardManager {
                     Board newPropertiesBoard = pair.second;
 
                     dbBoard.updateExcludingUserFields(newPropertiesBoard);
-                    helper.boardsDao.update(dbBoard);
+                    helper.getBoardDao().update(dbBoard);
                 }
             }
 
@@ -115,28 +110,11 @@ public class DatabaseBoardManager {
         };
     }
 
-    public Callable<Board> getBoard(final Site site, final String code) {
-        return () -> {
-            Board board = helper.boardsDao.queryBuilder()
-                    .where()
-                    .eq("site", site.id())
-                    .and()
-                    .eq("value", code)
-                    .queryForFirst();
-
-            if (board != null) {
-                board.site = site;
-            }
-
-            return board;
-        };
-    }
-
     @SuppressLint("UseSparseArrays")
     public Callable<List<Pair<Site, Boards>>> getBoardsForAllSitesOrdered(List<Site> sites) {
         return () -> {
             // Query the orders of the sites.
-            QueryBuilder<SiteModel, Integer> q = helper.siteDao.queryBuilder();
+            QueryBuilder<SiteModel, Integer> q = helper.getSiteModelDao().queryBuilder();
             q.selectColumns("id", "order");
             List<SiteModel> modelsWithOrder = q.query();
             Map<Integer, Integer> ordering = new HashMap<>();
@@ -153,7 +131,7 @@ public class DatabaseBoardManager {
             for (Site site : sitesOrdered) {
                 siteIds.add(site.id());
             }
-            List<Board> allBoards = helper.boardsDao.queryBuilder().where().in("site", siteIds).query();
+            List<Board> allBoards = helper.getBoardDao().queryBuilder().where().in("site", siteIds).query();
 
             // Map the boards from siteId to a list of boards.
             Map<Integer, Site> sitesById = new HashMap<>();
@@ -187,7 +165,7 @@ public class DatabaseBoardManager {
     public Callable<Boards> getSiteSavedBoards(final Site site) {
         return () -> {
             List<Board> boards =
-                    helper.boardsDao.queryBuilder().where().eq("site", site.id()).and().eq("saved", true).query();
+                    helper.getBoardDao().queryBuilder().where().eq("site", site.id()).and().eq("saved", true).query();
             for (int i = 0; i < boards.size(); i++) {
                 Board board = boards.get(i);
                 board.site = site;
@@ -198,7 +176,7 @@ public class DatabaseBoardManager {
 
     public Callable<Void> deleteBoards(Site site) {
         return () -> {
-            DeleteBuilder<Board, Integer> builder = helper.boardsDao.deleteBuilder();
+            DeleteBuilder<Board, Integer> builder = helper.getBoardDao().deleteBuilder();
 
             builder.where().eq("site", site.id());
             builder.delete();

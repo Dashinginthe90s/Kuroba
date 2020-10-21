@@ -31,7 +31,8 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.controller.Controller;
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
+import com.github.adamantcheese.chan.core.database.DatabaseFilterManager;
+import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.core.manager.FilterEngine;
 import com.github.adamantcheese.chan.core.manager.FilterEngine.FilterAction;
 import com.github.adamantcheese.chan.core.manager.FilterType;
@@ -53,7 +54,6 @@ import javax.inject.Inject;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static android.widget.LinearLayout.VERTICAL;
-import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.ui.helper.RefreshUIMessage.Reason.FILTERS_CHANGED;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
@@ -64,7 +64,7 @@ public class FiltersController
         extends Controller
         implements ToolbarNavigationController.ToolbarSearchCallback, View.OnClickListener {
     @Inject
-    DatabaseManager databaseManager;
+    DatabaseFilterManager databaseFilterManager;
 
     @Inject
     FilterEngine filterEngine;
@@ -115,7 +115,6 @@ public class FiltersController
     @Override
     public void onCreate() {
         super.onCreate();
-        inject(this);
 
         view = inflate(context, R.layout.controller_filters);
 
@@ -143,7 +142,7 @@ public class FiltersController
     @Override
     public void onDestroy() {
         super.onDestroy();
-        databaseManager.getDatabaseFilterManager().updateFilters(adapter.sourceList);
+        databaseFilterManager.updateFilters(adapter.sourceList);
     }
 
     @Override
@@ -288,7 +287,7 @@ public class FiltersController
             if (filter.allBoards) {
                 subText.append(getString(R.string.filter_summary_all_boards));
             } else if (filterEngine.getFilterBoardCount(filter) == 1) {
-                subText.append(String.format("/%s/", filter.boardCodesNoId()[0]));
+                subText.append(String.format("/%s/", filter.boards.split(":")[1]));
             } else {
                 int size = filterEngine.getFilterBoardCount(filter);
                 subText.append(String.format(Locale.ENGLISH, "%d boards", size));
@@ -311,7 +310,7 @@ public class FiltersController
 
         public void reload() {
             sourceList.clear();
-            sourceList.addAll(databaseManager.runTask(databaseManager.getDatabaseFilterManager().getFilters()));
+            sourceList.addAll(DatabaseUtils.runTask(databaseFilterManager.getFilters()));
             Collections.sort(sourceList, (o1, o2) -> o1.order - o2.order);
             filter();
         }
@@ -320,7 +319,7 @@ public class FiltersController
             Filter filter = sourceList.remove(from);
             sourceList.add(to, filter);
             sourceList = setOrders(sourceList);
-            databaseManager.runTask(databaseManager.getDatabaseFilterManager().updateFilters(sourceList));
+            DatabaseUtils.runTask(databaseFilterManager.updateFilters(sourceList));
             displayList.clear();
             displayList.addAll(sourceList);
             notifyDataSetChanged();

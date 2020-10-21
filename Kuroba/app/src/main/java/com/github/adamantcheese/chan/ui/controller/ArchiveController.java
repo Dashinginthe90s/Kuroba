@@ -26,7 +26,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.controller.Controller;
-import com.github.adamantcheese.chan.core.model.Archive;
+import com.github.adamantcheese.chan.core.model.InternalSiteArchive;
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.presenter.ArchivePresenter;
@@ -42,7 +42,6 @@ import java.util.List;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static android.widget.LinearLayout.VERTICAL;
-import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
@@ -50,7 +49,6 @@ public class ArchiveController
         extends Controller
         implements ArchivePresenter.Callback, ToolbarNavigationController.ToolbarSearchCallback,
                    SwipeRefreshLayout.OnRefreshListener {
-    private CrossfadeView crossfadeView;
     private SwipeRefreshLayout swipeRefreshLayout;
     private View progress;
     private View errorView;
@@ -71,7 +69,6 @@ public class ArchiveController
     @Override
     public void onCreate() {
         super.onCreate();
-        inject(this);
 
         // Inflate
         view = inflate(context, R.layout.controller_archive);
@@ -81,7 +78,6 @@ public class ArchiveController
         navigation.buildMenu().withItem(R.drawable.ic_search_white_24dp, this::searchClicked).build();
 
         // View binding
-        crossfadeView = view.findViewById(R.id.crossfade);
         swipeRefreshLayout = view.findViewById(R.id.swipe_refresh);
         RecyclerView archiveRecyclerview = view.findViewById(R.id.recycler_view);
         progress = view.findViewById(R.id.progress);
@@ -94,7 +90,6 @@ public class ArchiveController
         archiveRecyclerview.setAdapter(adapter);
         archiveRecyclerview.addItemDecoration(new DividerItemDecoration(context, VERTICAL));
         FastScrollerHelper.create(archiveRecyclerview);
-        crossfadeView.toggle(false, false);
         swipeRefreshLayout.setOnRefreshListener(this);
 
         //Request data
@@ -121,7 +116,7 @@ public class ArchiveController
     }
 
     @Override
-    public void setArchiveItems(List<Archive.ArchiveItem> items) {
+    public void setArchiveItems(List<InternalSiteArchive.ArchiveItem> items) {
         adapter.setArchiveItems(items);
     }
 
@@ -132,7 +127,7 @@ public class ArchiveController
 
     @Override
     public void showList() {
-        crossfadeView.toggle(true, true);
+        ((CrossfadeView) view.findViewById(R.id.crossfade)).toggle(true, true);
     }
 
     @Override
@@ -147,13 +142,13 @@ public class ArchiveController
         navigationController.pushController(threadController);
     }
 
-    private void onItemClicked(Archive.ArchiveItem item) {
+    private void onItemClicked(InternalSiteArchive.ArchiveItem item) {
         presenter.onItemClicked(item);
     }
 
     private class ArchiveAdapter
             extends RecyclerView.Adapter<ArchiveHolder> {
-        private List<Archive.ArchiveItem> archiveItems = new ArrayList<>();
+        private List<InternalSiteArchive.ArchiveItem> archiveItems = new ArrayList<>();
 
         @Override
         public int getItemCount() {
@@ -167,13 +162,13 @@ public class ArchiveController
 
         @Override
         public void onBindViewHolder(ArchiveHolder holder, int position) {
-            Archive.ArchiveItem archiveItem = archiveItems.get(position);
+            InternalSiteArchive.ArchiveItem archiveItem = archiveItems.get(position);
 
             holder.item = archiveItem;
             holder.text.setText(archiveItem.description);
         }
 
-        public void setArchiveItems(List<Archive.ArchiveItem> archiveItems) {
+        public void setArchiveItems(List<InternalSiteArchive.ArchiveItem> archiveItems) {
             this.archiveItems = archiveItems;
             notifyDataSetChanged();
         }
@@ -182,7 +177,7 @@ public class ArchiveController
     private class ArchiveHolder
             extends RecyclerView.ViewHolder {
         private TextView text;
-        private Archive.ArchiveItem item;
+        private InternalSiteArchive.ArchiveItem item;
 
         public ArchiveHolder(View itemView) {
             super(itemView);

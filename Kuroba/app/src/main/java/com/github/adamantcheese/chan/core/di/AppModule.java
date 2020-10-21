@@ -16,19 +16,21 @@
  */
 package com.github.adamantcheese.chan.core.di;
 
-import android.content.Context;
-import android.net.ConnectivityManager;
-
 import com.github.adamantcheese.chan.BuildConfig;
+import com.github.adamantcheese.chan.core.database.DatabaseBoardManager;
+import com.github.adamantcheese.chan.core.database.DatabaseFilterManager;
 import com.github.adamantcheese.chan.core.database.DatabaseHelper;
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
+import com.github.adamantcheese.chan.core.database.DatabaseHideManager;
+import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager;
+import com.github.adamantcheese.chan.core.database.DatabasePinManager;
+import com.github.adamantcheese.chan.core.database.DatabaseSavedReplyManager;
+import com.github.adamantcheese.chan.core.database.DatabaseSiteManager;
 import com.github.adamantcheese.chan.core.repository.SiteRepository;
 import com.github.adamantcheese.chan.core.saver.ImageSaver;
 import com.github.adamantcheese.chan.core.site.SiteResolver;
 import com.github.adamantcheese.chan.features.gesture_editor.Android10GesturesExclusionZonesHolder;
 import com.github.adamantcheese.chan.ui.captcha.CaptchaHolder;
-import com.github.adamantcheese.chan.ui.settings.base_directory.LocalThreadsBaseDirectory;
-import com.github.adamantcheese.chan.ui.settings.base_directory.SavedFilesBaseDirectory;
+import com.github.adamantcheese.chan.ui.settings.SavedFilesBaseDirectory;
 import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.k1rakishou.fsaf.BadPathSymbolResolutionStrategy;
@@ -40,8 +42,6 @@ import com.google.gson.Gson;
 import org.codejargon.feather.Provides;
 
 import java.io.File;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 import javax.inject.Singleton;
 
@@ -52,32 +52,66 @@ import static com.github.k1rakishou.fsaf.BadPathSymbolResolutionStrategy.Replace
 import static com.github.k1rakishou.fsaf.BadPathSymbolResolutionStrategy.ThrowAnException;
 
 public class AppModule {
-    private Context applicationContext;
     public static final String DI_TAG = "Dependency Injection";
 
-    public AppModule(Context applicationContext) {
-        this.applicationContext = applicationContext;
-    }
-
     @Provides
     @Singleton
-    public Context provideApplicationContext() {
-        Logger.d(DI_TAG, "App Context");
-        return applicationContext;
-    }
-
-    @Provides
-    @Singleton
-    public DatabaseHelper provideDatabaseHelper(Context applicationContext) {
+    public DatabaseHelper provideDatabaseHelper() {
         Logger.d(AppModule.DI_TAG, "Database helper");
-        return new DatabaseHelper(applicationContext);
+        return new DatabaseHelper();
     }
 
     @Provides
     @Singleton
-    public DatabaseManager provideDatabaseManager() {
-        Logger.d(AppModule.DI_TAG, "Database manager");
-        return new DatabaseManager();
+    public DatabaseLoadableManager provideDatabaseLoadableManager(
+            DatabaseHelper helper, SiteRepository siteRepository
+    ) {
+        Logger.d(AppModule.DI_TAG, "Database loadable manager");
+        return new DatabaseLoadableManager(helper, siteRepository);
+    }
+
+    @Provides
+    @Singleton
+    public DatabasePinManager provideDatabasePinManager(
+            DatabaseHelper helper, DatabaseLoadableManager databaseLoadableManager
+    ) {
+        Logger.d(AppModule.DI_TAG, "Database pin manager");
+        return new DatabasePinManager(helper, databaseLoadableManager);
+    }
+
+    @Provides
+    @Singleton
+    public DatabaseSavedReplyManager provideDatabaseSavedReplyManager(DatabaseHelper helper) {
+        Logger.d(AppModule.DI_TAG, "Database saved reply manager");
+        return new DatabaseSavedReplyManager(helper);
+    }
+
+    @Provides
+    @Singleton
+    public DatabaseFilterManager provideDatabaseFilterManager(DatabaseHelper helper) {
+        Logger.d(AppModule.DI_TAG, "Database filter manager");
+        return new DatabaseFilterManager(helper);
+    }
+
+    @Provides
+    @Singleton
+    public DatabaseBoardManager provideDatabaseBoardManager(DatabaseHelper helper) {
+        Logger.d(AppModule.DI_TAG, "Database board manager");
+        return new DatabaseBoardManager(helper);
+    }
+
+    @Provides
+    @Singleton
+    public DatabaseSiteManager provideDatabaseSiteManager(DatabaseHelper helper) {
+        Logger.d(AppModule.DI_TAG, "Database site manager");
+        return new DatabaseSiteManager(helper);
+    }
+
+    @Provides
+    @Singleton
+    public DatabaseHideManager provideDatabaseHideManager(DatabaseHelper helper) {
+        Logger.d(AppModule.DI_TAG, "Database hide manager");
+        return new DatabaseHideManager(helper);
     }
 
     @Provides
@@ -85,22 +119,6 @@ public class AppModule {
     public SiteResolver provideSiteResolver(SiteRepository siteRepository) {
         Logger.d(AppModule.DI_TAG, "Site resolver");
         return new SiteResolver(siteRepository);
-    }
-
-    @Provides
-    @Singleton
-    public ConnectivityManager provideConnectivityManager() {
-        Logger.d(DI_TAG, "Connectivity Manager");
-
-        ConnectivityManager connectivityManager =
-                (ConnectivityManager) applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-
-        if (connectivityManager == null) {
-            throw new NullPointerException("What's working in this ROM: You tell me ;) "
-                    + "\nWhat doesn't work: Connectivity fucking manager");
-        }
-
-        return connectivityManager;
     }
 
     @Provides
@@ -134,19 +152,13 @@ public class AppModule {
     @Provides
     @Singleton
     public FileManager provideFileManager() {
-        DirectoryManager directoryManager = new DirectoryManager(applicationContext);
-
-        // Add new base directories here
-        LocalThreadsBaseDirectory localThreadsBaseDirectory = new LocalThreadsBaseDirectory();
-        SavedFilesBaseDirectory savedFilesBaseDirectory = new SavedFilesBaseDirectory();
+        DirectoryManager directoryManager = new DirectoryManager(getAppContext());
 
         BadPathSymbolResolutionStrategy resolutionStrategy =
                 BuildConfig.DEV_BUILD ? ThrowAnException : ReplaceBadSymbols;
 
-        FileManager fileManager = new FileManager(applicationContext, resolutionStrategy, directoryManager);
-
-        fileManager.registerBaseDir(LocalThreadsBaseDirectory.class, localThreadsBaseDirectory);
-        fileManager.registerBaseDir(SavedFilesBaseDirectory.class, savedFilesBaseDirectory);
+        FileManager fileManager = new FileManager(getAppContext(), resolutionStrategy, directoryManager);
+        fileManager.registerBaseDir(SavedFilesBaseDirectory.class, new SavedFilesBaseDirectory());
 
         return fileManager;
     }
@@ -154,10 +166,12 @@ public class AppModule {
     @Provides
     @Singleton
     public FileChooser provideFileChooser() {
-        return new FileChooser(applicationContext);
+        return new FileChooser(getAppContext());
     }
 
-    static File getCacheDir() {
+    public static File getCacheDir() {
+        //TODO maybe it's best to just return the internal cache dir
+
         // See also res/xml/filepaths.xml for the fileprovider.
         if (getAppContext().getExternalCacheDir() != null) {
             return getAppContext().getExternalCacheDir();
@@ -172,13 +186,5 @@ public class AppModule {
         Logger.d(DI_TAG, "Android10GesturesExclusionZonesHolder");
 
         return new Android10GesturesExclusionZonesHolder(gson, getMinScreenSize(), getMaxScreenSize());
-    }
-
-    @Provides
-    @Singleton
-    public ExecutorService provideBackgroundPool() {
-        Logger.d(DI_TAG, "ExecutorService (Background Thread Pool)");
-
-        return Executors.newCachedThreadPool();
     }
 }

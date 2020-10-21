@@ -21,7 +21,7 @@ import android.net.Uri;
 
 import com.github.adamantcheese.chan.BuildConfig;
 import com.github.adamantcheese.chan.R;
-import com.github.adamantcheese.chan.core.settings.base_dir.LocalThreadsBaseDirSetting;
+import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.settings.base_dir.SavedFilesBaseDirSetting;
 import com.github.adamantcheese.chan.core.settings.primitives.BooleanSetting;
 import com.github.adamantcheese.chan.core.settings.primitives.CounterSetting;
@@ -46,6 +46,8 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 
 import static android.content.res.Configuration.ORIENTATION_PORTRAIT;
+import static com.github.adamantcheese.chan.core.model.PostImage.Type.GIF;
+import static com.github.adamantcheese.chan.core.model.PostImage.Type.STATIC;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppDir;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getPreferences;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getRes;
@@ -64,7 +66,6 @@ public class ChanSettings {
     public static final String EMPTY_JSON = "{}";
     public static final String NOTIFY_ALL_POSTS = "all";
     public static final String NOTIFY_ONLY_QUOTES = "quotes";
-    public static final String NO_HASH_SET = "NO_HASH_SET";
 
     public enum MediaAutoLoadMode
             implements OptionSettingItem {
@@ -192,12 +193,14 @@ public class ChanSettings {
     public static final BooleanSetting enableReplyFab;
     public static final BooleanSetting moveInputToBottom;
     public static final BooleanSetting captchaOnBottom;
+    public static final BooleanSetting reverseDrawer;
     public static final BooleanSetting useImmersiveModeForGallery;
     public static final BooleanSetting moveSortToToolbar;
     public static final BooleanSetting neverShowPages;
 
     //Post
-    public static final StringSetting fontSize;
+    public static final IntegerSetting thumbnailSize;
+    public static final IntegerSetting fontSize;
     public static final BooleanSetting fontAlternate;
     public static final BooleanSetting shiftPostFormat;
     public static final BooleanSetting accessibleInfo;
@@ -210,7 +213,7 @@ public class ChanSettings {
     public static final BooleanSetting showAnonymousName;
     public static final BooleanSetting anonymizeIds;
     public static final BooleanSetting addDubs;
-    public static final BooleanSetting parseYoutubeTitles;
+    public static final BooleanSetting parseMediaTitles;
     public static final BooleanSetting parseYoutubeDuration;
     public static final BooleanSetting enableEmoji;
 
@@ -235,6 +238,7 @@ public class ChanSettings {
     public static final BooleanSetting openLinkBrowser;
     public static final BooleanSetting imageViewerGestures;
     public static final BooleanSetting alwaysOpenDrawer;
+    public static final BooleanSetting applyImageFilterToPost;
     public static final StringSetting jsCaptchaCookies;
 
     // Reply
@@ -251,7 +255,6 @@ public class ChanSettings {
     public static final StringSetting parseYoutubeAPIKey;
     public static final BooleanSetting fullUserRotationEnable;
     public static final BooleanSetting allowFilePickChooser;
-    public static final BooleanSetting allowMediaScannerToScanLocalThreads;
     public static final BooleanSetting showCopyApkUpdateDialog;
 
     // Proxy
@@ -263,13 +266,11 @@ public class ChanSettings {
     //region MEDIA
     // Saving
     public static final SavedFilesBaseDirSetting saveLocation;
-    public static final LocalThreadsBaseDirSetting localThreadLocation;
     public static final BooleanSetting saveImageBoardFolder;
     public static final BooleanSetting saveImageThreadFolder;
     public static final BooleanSetting saveAlbumBoardFolder;
     public static final BooleanSetting saveAlbumThreadFolder;
     public static final BooleanSetting saveServerFilename;
-    public static final BooleanSetting incrementalThreadDownloadingEnabled;
 
     // Video settings
     public static final BooleanSetting videoAutoLoop;
@@ -294,12 +295,11 @@ public class ChanSettings {
     //endregion
 
     //region OTHER
-    public static final BooleanSetting historyEnabled;
     public static final BooleanSetting collectCrashLogs;
     //endregion
 
     //region DEVELOPER
-    public static final BooleanSetting crashOnSafeThrow;
+    public static final BooleanSetting crashOnWrongThread;
     public static final BooleanSetting verboseLogs;
     //endregion
 
@@ -309,7 +309,6 @@ public class ChanSettings {
 
     // While these are not "settings", they are here instead of in PersistableChanState because they control the appearance of hints.
     // Hints should not be shown if re-imported.
-    public static final CounterSetting historyOpenCounter;
     public static final CounterSetting threadOpenCounter;
     public static final IntegerSetting drawerAutoOpenCount;
     public static final BooleanSetting reencodeHintShown;
@@ -351,12 +350,14 @@ public class ChanSettings {
             enableReplyFab = new BooleanSetting(p, "preference_enable_reply_fab", true);
             moveInputToBottom = new BooleanSetting(p, "move_input_bottom", false);
             captchaOnBottom = new BooleanSetting(p, "captcha_on_bottom", true);
+            reverseDrawer = new BooleanSetting(p, "reverse_drawer", false);
             useImmersiveModeForGallery = new BooleanSetting(p, "use_immersive_mode_for_gallery", false);
             moveSortToToolbar = new BooleanSetting(p, "move_sort_to_toolbar", false);
             neverShowPages = new BooleanSetting(p, "never_show_page_number", false);
 
             // Post
-            fontSize = new StringSetting(p, "preference_font", getRes().getBoolean(R.bool.is_tablet) ? "16" : "14");
+            thumbnailSize = new IntegerSetting(p, "preference_thumbnail", 100);
+            fontSize = new IntegerSetting(p, "preference_font", getRes().getBoolean(R.bool.is_tablet) ? 16 : 14);
             fontAlternate = new BooleanSetting(p, "preference_font_alternate", false);
             shiftPostFormat = new BooleanSetting(p, "shift_post_format", true);
             accessibleInfo = new BooleanSetting(p, "preference_enable_accessible_info", false);
@@ -369,7 +370,7 @@ public class ChanSettings {
             showAnonymousName = new BooleanSetting(p, "preference_show_anonymous_name", false);
             anonymizeIds = new BooleanSetting(p, "preference_anonymize_ids", false);
             addDubs = new BooleanSetting(p, "add_dubs", false);
-            parseYoutubeTitles = new BooleanSetting(p, "parse_youtube_titles", true);
+            parseMediaTitles = new BooleanSetting(p, "parse_media_titles", true);
             parseYoutubeDuration = new BooleanSetting(p, "parse_youtube_duration", false);
             enableEmoji = new BooleanSetting(p, "enable_emoji", false);
 
@@ -395,6 +396,7 @@ public class ChanSettings {
             openLinkBrowser = new BooleanSetting(p, "preference_open_link_browser", false);
             imageViewerGestures = new BooleanSetting(p, "image_viewer_gestures", true);
             alwaysOpenDrawer = new BooleanSetting(p, "drawer_auto_open_always", false);
+            applyImageFilterToPost = new BooleanSetting(p, "apply_image_filtering_to_post", false);
             jsCaptchaCookies = new StringSetting(p, "js_captcha_cookies", EMPTY_JSON);
 
             // Reply
@@ -413,8 +415,6 @@ public class ChanSettings {
                     new StringSetting(p, "parse_youtube_API_key", "AIzaSyB5_zaen_-46Uhz1xGR-lz1YoUMHqCD6CE");
             fullUserRotationEnable = new BooleanSetting(p, "full_user_rotation_enable", true);
             allowFilePickChooser = new BooleanSetting(p, "allow_file_picker_chooser", false);
-            allowMediaScannerToScanLocalThreads =
-                    new BooleanSetting(p, "allow_media_scanner_to_scan_local_threads", false);
             showCopyApkUpdateDialog = new BooleanSetting(p, "show_copy_apk_update_dialog", true);
 
             // Proxy
@@ -430,13 +430,11 @@ public class ChanSettings {
             //region MEDIA
             // Saving
             saveLocation = new SavedFilesBaseDirSetting(p);
-            localThreadLocation = new LocalThreadsBaseDirSetting(p);
             saveImageBoardFolder = new BooleanSetting(p, "preference_save_image_subboard", false);
             saveImageThreadFolder = new BooleanSetting(p, "preference_save_image_subthread", false);
             saveAlbumBoardFolder = new BooleanSetting(p, "preference_save_album_subboard", false);
             saveAlbumThreadFolder = new BooleanSetting(p, "preference_save_album_subthread", false);
             saveServerFilename = new BooleanSetting(p, "preference_image_save_original", false);
-            incrementalThreadDownloadingEnabled = new BooleanSetting(p, "incremental_thread_downloading", true);
 
             // Video Settings
             videoAutoLoop = new BooleanSetting(p, "preference_video_loop", true);
@@ -477,18 +475,16 @@ public class ChanSettings {
             //endregion
 
             //region OTHER
-            historyEnabled = new BooleanSetting(p, "preference_history_enabled", true);
             collectCrashLogs = new BooleanSetting(p, "collect_crash_logs", true);
             //endregion
 
             //region DEVELOPER
-            crashOnSafeThrow = new BooleanSetting(p, "crash_on_safe_throw", true);
+            crashOnWrongThread = new BooleanSetting(p, "crash_on_wrong_thread", true);
             verboseLogs = new BooleanSetting(p, "verbose_logs", false);
             //endregion
 
             //region DATA
             lastImageOptions = new StringSetting(p, "last_image_options", "");
-            historyOpenCounter = new CounterSetting(p, "counter_history_open");
             threadOpenCounter = new CounterSetting(p, "counter_thread_open");
             drawerAutoOpenCount = new IntegerSetting(p, "drawer_auto_open_count", 0);
             reencodeHintShown = new BooleanSetting(p, "preference_reencode_hint_already_shown", false);
@@ -540,6 +536,11 @@ public class ChanSettings {
                 : ChanSettings.albumGridSpanCountLandscape.get();
     }
 
+    public static boolean shouldUseFullSizeImage(PostImage postImage) {
+        return ChanSettings.autoLoadThreadImages.get() && (postImage.type == STATIC || postImage.type == GIF)
+                && !postImage.isInlined;
+    }
+
     /**
      * Reads setting from the shared preferences file to a string.
      * Called on the Database thread.
@@ -547,7 +548,6 @@ public class ChanSettings {
     public static String serializeToString()
             throws IOException {
         String prevSaveLocationUri = null;
-        String prevLocalThreadsLocationUri = null;
 
         /*
          We need to check if the user has any of the location settings set to a SAF directory.
@@ -570,15 +570,6 @@ public class ChanSettings {
             saveLocation.getSafBaseDir().remove();
             saveLocation.resetFileDir();
             saveLocation.resetActiveDir();
-        }
-
-        if (localThreadLocation.isSafDirActive()) {
-            // Save the localThreadsLocationUri
-            prevLocalThreadsLocationUri = localThreadLocation.getSafBaseDir().get();
-
-            localThreadLocation.getSafBaseDir().remove();
-            localThreadLocation.resetFileDir();
-            localThreadLocation.resetActiveDir();
         }
 
         File file = new File(getAppDir(), sharedPrefsFile);
@@ -608,11 +599,6 @@ public class ChanSettings {
             ChanSettings.saveLocation.setSafBaseDir(Uri.parse(prevSaveLocationUri));
         }
 
-        if (prevLocalThreadsLocationUri != null) {
-            ChanSettings.localThreadLocation.resetFileDir();
-            ChanSettings.localThreadLocation.setSafBaseDir(Uri.parse(prevLocalThreadsLocationUri));
-        }
-
         return new String(buffer);
     }
 
@@ -627,7 +613,7 @@ public class ChanSettings {
         if (!file.exists()) {
             // Hack to create the shared_prefs file when it does not exist so that we don't cancel
             // settings importing because shared_prefs file does not exist
-            String fontSize = ChanSettings.fontSize.get();
+            int fontSize = ChanSettings.fontSize.get();
             ChanSettings.fontSize.setSyncNoCheck(fontSize);
         }
 

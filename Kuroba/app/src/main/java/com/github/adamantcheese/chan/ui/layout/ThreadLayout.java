@@ -39,7 +39,8 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
 import com.github.adamantcheese.chan.controller.Controller;
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
+import com.github.adamantcheese.chan.core.database.DatabaseHideManager;
+import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.core.manager.FilterType;
 import com.github.adamantcheese.chan.core.model.ChanThread;
 import com.github.adamantcheese.chan.core.model.Post;
@@ -50,6 +51,8 @@ import com.github.adamantcheese.chan.core.model.orm.PostHide;
 import com.github.adamantcheese.chan.core.presenter.ReplyPresenter.Page;
 import com.github.adamantcheese.chan.core.presenter.ThreadPresenter;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
+import com.github.adamantcheese.chan.core.site.ExternalSiteArchive;
+import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.core.site.loader.ChanThreadLoader;
 import com.github.adamantcheese.chan.ui.adapter.PostsFilter;
 import com.github.adamantcheese.chan.ui.controller.ImageOptionsController;
@@ -96,9 +99,8 @@ public class ThreadLayout
     }
 
     @Inject
-    DatabaseManager databaseManager;
+    DatabaseHideManager databaseHideManager;
 
-    @Inject
     ThreadPresenter presenter;
 
     private ThreadLayoutCallback callback;
@@ -155,7 +157,7 @@ public class ThreadLayout
         progressLayout = LayoutUtils.inflate(getContext(), R.layout.layout_thread_progress, this, false);
 
         // View setup
-        presenter.setContext(getContext());
+        presenter = new ThreadPresenter(getContext(), this);
         threadListLayout.setCallbacks(presenter, presenter, presenter, presenter, this);
         postPopupHelper = new PostPopupHelper(getContext(), presenter, this);
         removedPostsHelper = new RemovedPostsHelper(getContext(), presenter, this);
@@ -170,8 +172,6 @@ public class ThreadLayout
             replyButton.setOnClickListener(this);
             replyButton.setToolbar(callback.getToolbar());
         }
-
-        presenter.create(this);
     }
 
     public void destroy() {
@@ -184,7 +184,7 @@ public class ThreadLayout
             if (!archiveButton) {
                 presenter.requestData();
             } else {
-                callback.showArchives();
+                presenter.showArchives(presenter.getLoadable().board.code, presenter.getLoadable().no, -1);
             }
         } else if (v == replyButton) {
             threadListLayout.openReply(true);
@@ -233,24 +233,23 @@ public class ThreadLayout
     }
 
     @Override
+    public boolean isViewingCatalog() {
+        return callback.isViewingCatalog();
+    }
+
+    @Override
     public void showPosts(
             ChanThread thread, PostsFilter filter, boolean refreshAfterHideOrRemovePosts
     ) {
-        if (thread.getLoadable().isLocal()) {
-            if (replyButton.getVisibility() == VISIBLE) {
-                replyButton.hide();
-            }
-        } else {
-            if (replyButton.getVisibility() != VISIBLE) {
-                replyButton.show();
-            }
+
+        if (replyButton.getVisibility() != VISIBLE && !(thread.getLoadable().site instanceof ExternalSiteArchive)) {
+            replyButton.show();
         }
 
-        getPresenter().updateLoadable(thread.getLoadable().getLoadableDownloadingState());
         threadListLayout.showPosts(thread, filter, visible != Visible.THREAD, refreshAfterHideOrRemovePosts);
 
         switchVisible(Visible.THREAD);
-        callback.onShowPosts();
+        callback.onShowPosts(thread.getLoadable());
     }
 
     @Override
@@ -269,8 +268,9 @@ public class ThreadLayout
         } else {
             switchVisible(Visible.ERROR);
             errorText.setText(errorMessage);
+            archiveButton = false;
             if (error.getErrorMessage() == R.string.thread_load_failed_not_found) {
-                errorRetryButton.setText(R.string.thread_show_archives);
+                errorRetryButton.setText(R.string.thread_view_external_archive);
                 archiveButton = true;
 
                 presenter.markAllPostsAsSeen();
@@ -520,7 +520,7 @@ public class ThreadLayout
         // is no point in hiding replies to a thread
         final PostHide postHide = PostHide.hidePost(post, true, hide, false);
 
-        databaseManager.runTask(databaseManager.getDatabaseHideManager().addThreadHide(postHide));
+        DatabaseUtils.runTask(databaseHideManager.addThreadHide(postHide));
 
         presenter.refreshUI();
 
@@ -529,7 +529,7 @@ public class ThreadLayout
         Snackbar snackbar = Snackbar.make(this, snackbarStringId, Snackbar.LENGTH_LONG);
         snackbar.setGestureInsetBottomIgnored(true);
         snackbar.setAction(R.string.undo, v -> {
-            databaseManager.runTask(databaseManager.getDatabaseHideManager().removePostHide(postHide));
+            DatabaseUtils.runTask(databaseHideManager.removePostHide(postHide));
             presenter.refreshUI();
         }).show();
     }
@@ -546,7 +546,7 @@ public class ThreadLayout
             }
         }
 
-        databaseManager.runTask(databaseManager.getDatabaseHideManager().addPostsHide(hideList));
+        DatabaseUtils.runTask(databaseHideManager.addPostsHide(hideList));
 
         presenter.refreshUI();
 
@@ -560,14 +560,14 @@ public class ThreadLayout
         Snackbar snackbar = Snackbar.make(this, formattedString, Snackbar.LENGTH_LONG);
         snackbar.setGestureInsetBottomIgnored(true);
         snackbar.setAction(R.string.undo, v -> {
-            databaseManager.runTask(databaseManager.getDatabaseHideManager().removePostsHide(hideList));
+            DatabaseUtils.runTask(databaseHideManager.removePostsHide(hideList));
             presenter.refreshUI();
         }).show();
     }
 
     @Override
     public void unhideOrUnremovePost(Post post) {
-        databaseManager.runTask(databaseManager.getDatabaseHideManager().removePostHide(PostHide.unhidePost(post)));
+        DatabaseUtils.runTask(databaseHideManager.removePostHide(PostHide.unhidePost(post)));
 
         presenter.refreshUI();
     }
@@ -586,7 +586,7 @@ public class ThreadLayout
             postsToRestore.add(PostHide.unhidePost(threadLoadable.site.id(), threadLoadable.boardCode, postNo));
         }
 
-        databaseManager.runTask(databaseManager.getDatabaseHideManager().removePostsHide(postsToRestore));
+        DatabaseUtils.runTask(databaseHideManager.removePostsHide(postsToRestore));
 
         presenter.refreshUI();
 
@@ -710,7 +710,9 @@ public class ThreadLayout
                     break;
                 case THREAD:
                     loadView.setView(threadListLayout);
-                    showReplyButton(true);
+                    if (presenter.isBound() && presenter.getLoadable().site.siteFeature(Site.SiteFeature.POSTING)) {
+                        showReplyButton(true);
+                    }
                     break;
                 case ERROR:
                     loadView.setView(errorLayout);
@@ -778,13 +780,11 @@ public class ThreadLayout
 
         void showBoardAndSearch(Loadable catalogLoadable, String searchQuery);
 
-        void showArchives();
-
         void showImages(List<PostImage> images, int index, Loadable loadable, ThumbnailView thumbnail);
 
         void showAlbum(List<PostImage> images, int index);
 
-        void onShowPosts();
+        void onShowPosts(Loadable loadable);
 
         void presentController(Controller controller);
 
@@ -797,5 +797,7 @@ public class ThreadLayout
         void openFilterForType(FilterType type, String filterText);
 
         boolean threadBackPressed();
+
+        boolean isViewingCatalog();
     }
 }

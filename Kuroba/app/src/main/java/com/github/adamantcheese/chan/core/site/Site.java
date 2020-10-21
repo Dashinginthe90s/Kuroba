@@ -19,14 +19,12 @@ package com.github.adamantcheese.chan.core.site;
 import androidx.annotation.NonNull;
 
 import com.github.adamantcheese.chan.core.model.Post;
-import com.github.adamantcheese.chan.core.model.json.site.SiteConfig;
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.settings.primitives.JsonSettings;
 import com.github.adamantcheese.chan.core.site.common.CommonSite.CommonCallModifier;
 import com.github.adamantcheese.chan.core.site.http.DeleteRequest;
 import com.github.adamantcheese.chan.core.site.http.LoginRequest;
-import com.github.adamantcheese.chan.core.site.http.Reply;
 import com.github.adamantcheese.chan.core.site.parser.ChanReader;
 
 import java.util.List;
@@ -36,7 +34,7 @@ public interface Site {
         /**
          * This site supports posting. (Or rather, we've implemented support for it.)
          *
-         * @see SiteActions#post(Reply, SiteActions.PostListener)
+         * @see SiteActions#post(Loadable, SiteActions.PostListener)
          * @see SiteEndpoints#reply(Loadable)
          */
         POSTING,
@@ -122,21 +120,20 @@ public interface Site {
     }
 
     /**
-     * Initialize the site with the given id, config, and userSettings.
+     * Initialize the site with the given id and userSettings.
      * <p><b>Note: do not use any managers at this point, because they rely on the sites being initialized.
      * Instead, use {@link #postInitialize()}</b>
      *
      * @param id           the site id
-     * @param config       the site config
      * @param userSettings the site user settings
      */
-    void initialize(int id, SiteConfig config, JsonSettings userSettings);
+    void initialize(int id, JsonSettings userSettings);
 
     void postInitialize();
 
     /**
      * Global positive (>0) integer that uniquely identifies this site.<br>
-     * Use the id received from {@link #initialize(int, SiteConfig, JsonSettings)}.
+     * Use the id received from {@link #initialize(int, JsonSettings)}.
      *
      * @return a positive (>0) integer that uniquely identifies this site.
      */

@@ -24,23 +24,20 @@ import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.ListView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
-import androidx.core.util.Pair;
 
-import com.github.adamantcheese.chan.BuildConfig;
-import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
 import com.github.adamantcheese.chan.core.cache.CacheHandler;
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
-import com.github.adamantcheese.chan.core.manager.ArchivesManager;
+import com.github.adamantcheese.chan.core.database.DatabaseHideManager;
+import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager;
+import com.github.adamantcheese.chan.core.database.DatabaseSavedReplyManager;
+import com.github.adamantcheese.chan.core.database.DatabaseUtils;
+import com.github.adamantcheese.chan.core.manager.BoardManager;
 import com.github.adamantcheese.chan.core.manager.ChanLoaderManager;
 import com.github.adamantcheese.chan.core.manager.FilterWatchManager;
-import com.github.adamantcheese.chan.core.manager.PageRequestManager;
-import com.github.adamantcheese.chan.core.manager.ThreadSaveManager;
 import com.github.adamantcheese.chan.core.manager.WatchManager;
 import com.github.adamantcheese.chan.core.model.ChanThread;
 import com.github.adamantcheese.chan.core.model.Post;
@@ -48,21 +45,21 @@ import com.github.adamantcheese.chan.core.model.PostHttpIcon;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.model.PostLinkable;
 import com.github.adamantcheese.chan.core.model.orm.Board;
-import com.github.adamantcheese.chan.core.model.orm.History;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.model.orm.Pin;
-import com.github.adamantcheese.chan.core.model.orm.PinType;
 import com.github.adamantcheese.chan.core.model.orm.SavedReply;
-import com.github.adamantcheese.chan.core.model.orm.SavedThread;
 import com.github.adamantcheese.chan.core.repository.BitmapRepository;
+import com.github.adamantcheese.chan.core.repository.PageRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
+import com.github.adamantcheese.chan.core.site.ExternalSiteArchive;
 import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.core.site.SiteActions;
 import com.github.adamantcheese.chan.core.site.http.DeleteRequest;
 import com.github.adamantcheese.chan.core.site.http.DeleteResponse;
 import com.github.adamantcheese.chan.core.site.loader.ChanThreadLoader;
-import com.github.adamantcheese.chan.core.site.parser.CommentParser;
-import com.github.adamantcheese.chan.core.site.parser.MockReplyManager;
+import com.github.adamantcheese.chan.core.site.parser.CommentParser.ResolveLink;
+import com.github.adamantcheese.chan.core.site.parser.CommentParser.SearchLink;
+import com.github.adamantcheese.chan.core.site.parser.CommentParser.ThreadLink;
 import com.github.adamantcheese.chan.ui.adapter.PostAdapter;
 import com.github.adamantcheese.chan.ui.adapter.PostsFilter;
 import com.github.adamantcheese.chan.ui.cell.PostCellInterface;
@@ -70,7 +67,6 @@ import com.github.adamantcheese.chan.ui.cell.ThreadStatusCell;
 import com.github.adamantcheese.chan.ui.helper.PostHelper;
 import com.github.adamantcheese.chan.ui.layout.ArchivesLayout;
 import com.github.adamantcheese.chan.ui.layout.ThreadListLayout;
-import com.github.adamantcheese.chan.ui.settings.base_directory.LocalThreadsBaseDirectory;
 import com.github.adamantcheese.chan.ui.view.FloatingMenu;
 import com.github.adamantcheese.chan.ui.view.FloatingMenuItem;
 import com.github.adamantcheese.chan.ui.view.ThumbnailView;
@@ -85,6 +81,7 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.GregorianCalendar;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -92,10 +89,9 @@ import java.util.Set;
 
 import javax.inject.Inject;
 
-import static com.github.adamantcheese.chan.Chan.instance;
+import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLink;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.postToEventBus;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.setClipboardContent;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.shareLink;
@@ -135,19 +131,38 @@ public class ThreadPresenter
     private static final int POST_OPTION_FILTER_COUNTRY_CODE = 23;
     private static final int POST_OPTION_EXTRA = 24;
     private static final int POST_OPTION_REMOVE = 25;
-    private static final int POST_OPTION_MOCK_REPLY = 26;
-    private static final int POST_OPTION_COPY_POST_LINK = 27;
-    private static final int POST_OPTION_COPY_CROSS_BOARD_LINK = 28;
-    private static final int POST_OPTION_COPY_POST_TEXT = 29;
-    private static final int POST_OPTION_COPY_IMG_URL = 30;
-    private static final int POST_OPTION_COPY_POST_URL = 31;
+    private static final int POST_OPTION_COPY_POST_LINK = 26;
+    private static final int POST_OPTION_COPY_CROSS_BOARD_LINK = 27;
+    private static final int POST_OPTION_COPY_POST_TEXT = 28;
+    private static final int POST_OPTION_COPY_IMG_URL = 29;
+    private static final int POST_OPTION_COPY_POST_URL = 30;
 
-    private final WatchManager watchManager;
-    private final DatabaseManager databaseManager;
-    private final ChanLoaderManager chanLoaderManager;
-    private final ThreadSaveManager threadSaveManager;
-    private final FileManager fileManager;
-    private final MockReplyManager mockReplyManager;
+    @Inject
+    private WatchManager watchManager;
+
+    @Inject
+    private DatabaseLoadableManager databaseLoadableManager;
+
+    @Inject
+    private DatabaseSavedReplyManager databaseSavedReplyManager;
+
+    @Inject
+    private ChanLoaderManager chanLoaderManager;
+
+    @Inject
+    private FileManager fileManager;
+
+    @Inject
+    private CacheHandler cacheHandler;
+
+    @Inject
+    private BoardManager boardManager;
+
+    @Inject
+    private DatabaseHideManager databaseHideManager;
+
+    @Inject
+    private FilterWatchManager filterWatchManager;
 
     private ThreadPresenterCallback threadPresenterCallback;
     private Loadable loadable;
@@ -156,39 +171,22 @@ public class ThreadPresenter
     private String searchQuery;
     private boolean forcePageUpdate;
     private PostsFilter.Order order = PostsFilter.Order.BUMP;
-    private boolean historyAdded;
-    private boolean addToLocalBackHistory;
     private Context context;
     private List<FloatingMenuItem<Integer>> filterMenu;
     private List<FloatingMenuItem<Integer>> copyMenu;
     //endregion
 
-    @Inject
-    public ThreadPresenter(
-            WatchManager watchManager,
-            DatabaseManager databaseManager,
-            ChanLoaderManager chanLoaderManager,
-            ThreadSaveManager threadSaveManager,
-            FileManager fileManager,
-            MockReplyManager mockReplyManager
-    ) {
-        this.watchManager = watchManager;
-        this.databaseManager = databaseManager;
-        this.chanLoaderManager = chanLoaderManager;
-        this.threadSaveManager = threadSaveManager;
-        this.fileManager = fileManager;
-        this.mockReplyManager = mockReplyManager;
-    }
-
-    public void create(ThreadPresenterCallback threadPresenterCallback) {
-        this.threadPresenterCallback = threadPresenterCallback;
+    public ThreadPresenter(Context context, ThreadPresenterCallback callback) {
+        this.context = context;
+        threadPresenterCallback = callback;
+        inject(this);
     }
 
     public void showNoContent() {
         threadPresenterCallback.showEmpty();
     }
 
-    public synchronized void bindLoadable(Loadable loadable, boolean addToLocalBackHistory) {
+    public synchronized void bindLoadable(Loadable loadable) {
         if (!loadable.equals(this.loadable)) {
             if (isBound()) {
                 stopSavingThreadIfItIsBeingSaved(this.loadable);
@@ -196,17 +194,13 @@ public class ThreadPresenter
             }
 
             this.loadable = loadable;
-            this.addToLocalBackHistory = addToLocalBackHistory;
 
-            startSavingThreadIfItIsNotBeingSaved(this.loadable);
+            loadable.lastLoadDate = GregorianCalendar.getInstance().getTime();
+            DatabaseUtils.runTaskAsync(databaseLoadableManager.updateLoadable(loadable));
+
             chanLoader = chanLoaderManager.obtain(loadable, this);
-            loadable.site.actions().archives(Chan.instance(ArchivesManager.class));
             threadPresenterCallback.showLoading();
         }
-    }
-
-    public synchronized void bindLoadable(Loadable loadable) {
-        bindLoadable(loadable, true);
     }
 
     public synchronized void unbindLoadable() {
@@ -215,11 +209,13 @@ public class ThreadPresenter
             chanLoaderManager.release(chanLoader, this);
             chanLoader = null;
             loadable = null;
-            historyAdded = false;
-            addToLocalBackHistory = true;
 
             threadPresenterCallback.showLoading();
         }
+    }
+
+    public void updateDatabaseLoadable() {
+        DatabaseUtils.runTaskAsync(databaseLoadableManager.updateLoadable(loadable));
     }
 
     private void stopSavingThreadIfItIsBeingSaved(Loadable loadable) {
@@ -231,55 +227,8 @@ public class ThreadPresenter
         }
 
         Pin pin = watchManager.findPinByLoadableId(loadable.id);
-        if (pin == null // No pin for this loadable we are probably not downloading this thread
-                || !PinType.hasDownloadFlag(pin.pinType)) // Pin has no downloading flag
-        {
-            return;
-        }
+        if (pin == null) return; // No pin for this loadable
 
-        SavedThread savedThread = watchManager.findSavedThreadByLoadableId(loadable.id);
-        if (savedThread == null // We are not downloading this thread
-                || loadable.getLoadableDownloadingState() == Loadable.LoadableDownloadingState.AlreadyDownloaded
-                // We are viewing already saved copy of the thread
-                || savedThread.isFullyDownloaded || savedThread.isStopped) {
-            return;
-        }
-
-        watchManager.stopSavingThread(loadable);
-        postToEventBus(new WatchManager.PinMessages.PinChangedMessage(pin));
-    }
-
-    private void startSavingThreadIfItIsNotBeingSaved(Loadable loadable) {
-        if ((ChanSettings.watchEnabled.get() && ChanSettings.watchBackground.get()) || loadable == null
-                || loadable.mode != Loadable.Mode.THREAD) {
-            // Do not start thread saving if background watcher is enabled
-            // Or if we're in the catalog
-            return;
-        }
-
-        Pin pin = watchManager.findPinByLoadableId(loadable.id);
-        if (pin == null || !PinType.hasDownloadFlag(pin.pinType)) {
-            // No pin for this loadable we are probably not downloading this thread
-            // Pin has no downloading flag
-            return;
-        }
-
-        SavedThread savedThread = watchManager.findSavedThreadByLoadableId(loadable.id);
-        if (loadable.getLoadableDownloadingState() == Loadable.LoadableDownloadingState.AlreadyDownloaded
-                || savedThread == null || savedThread.isFullyDownloaded || !savedThread.isStopped) {
-            // We are viewing already saved copy of the thread
-            // We are not downloading this thread
-            // Thread is already fully downloaded
-            // Thread saving is already in progress
-            return;
-        }
-
-        if (!fileManager.baseDirectoryExists(LocalThreadsBaseDirectory.class)) {
-            // Base directory for local threads does not exist or was deleted
-            return;
-        }
-
-        watchManager.startSavingThread(loadable);
         postToEventBus(new WatchManager.PinMessages.PinChangedMessage(pin));
     }
 
@@ -326,126 +275,26 @@ public class ThreadPresenter
         if (pin == null) {
             if (chanLoader.getThread() != null) {
                 Post op = chanLoader.getThread().getOp();
-                watchManager.createPin(loadable, op, PinType.WATCH_NEW_POSTS);
-            } else {
-                watchManager.createPin(loadable);
+                loadable.thumbnailUrl = op.image() == null ? null : op.image().getThumbnailUrl();
             }
+            watchManager.createPin(loadable);
             return true;
         }
 
-        if (PinType.hasWatchNewPostsFlag(pin.pinType)) {
-            pin.pinType = PinType.removeWatchNewPostsFlag(pin.pinType);
-
-            if (PinType.hasNoFlags(pin.pinType)) {
-                watchManager.deletePin(pin);
-            } else {
-                watchManager.updatePin(pin);
-            }
-        } else {
-            pin.pinType = PinType.addWatchNewPostsFlag(pin.pinType);
-            watchManager.updatePin(pin);
-        }
-
-        return true;
-    }
-
-    public synchronized boolean save() {
-        if (!isBound()) return false;
-        Pin pin = watchManager.findPinByLoadableId(loadable.id);
-        if (pin == null || !PinType.hasDownloadFlag(pin.pinType)) {
-            boolean startedSaving = saveInternal();
-            if (!startedSaving) {
-                watchManager.stopSavingThread(loadable);
-            }
-
-            return startedSaving;
-        }
-
-        if (!PinType.hasWatchNewPostsFlag(pin.pinType)) {
-            pin.pinType = PinType.removeDownloadNewPostsFlag(pin.pinType);
+        if (pin.watching) {
             watchManager.deletePin(pin);
         } else {
-            watchManager.stopSavingThread(pin.loadable);
-
-            // Remove the flag after stopping thread saving, otherwise we just won't find the thread
-            // because the pin won't have the download flag which we check somewhere deep inside the
-            // stopSavingThread() method
-            pin.pinType = PinType.removeDownloadNewPostsFlag(pin.pinType);
-            watchManager.updatePin(pin);
-        }
-
-        loadable.setLoadableState(Loadable.LoadableDownloadingState.NotDownloading);
-        return true;
-    }
-
-    private boolean saveInternal() {
-        if (chanLoader.getThread() == null) {
-            Logger.e(this, "chanLoader.getThread() == null");
-            return false;
-        }
-
-        Post op = chanLoader.getThread().getOp();
-        List<Post> postsToSave = chanLoader.getThread().getPosts();
-
-        Pin oldPin = watchManager.findPinByLoadableId(loadable.id);
-        if (oldPin != null) {
-            // Save button is clicked and bookmark button is already pressed
-            // Update old pin and start saving the thread
-            if (PinType.hasDownloadFlag(oldPin.pinType)) {
-                // We forgot to delete pin when cancelling thread download?
-                throw new IllegalStateException("oldPin already contains DownloadFlag");
-            }
-
-            oldPin.pinType = PinType.addDownloadNewPostsFlag(oldPin.pinType);
-            watchManager.updatePin(oldPin);
-
-            if (!startSavingThreadInternal(loadable, postsToSave, oldPin)) {
-                return false;
-            }
-
-            postToEventBus(new WatchManager.PinMessages.PinChangedMessage(oldPin));
-        } else {
-            // Save button is clicked and bookmark button is not yet pressed
-            // Create new pin and start saving the thread
-
-            // We don't want to send PinAddedMessage broadcast right away. We will send it after
-            // the thread has been saved
-            if (!watchManager.createPin(loadable, op, PinType.DOWNLOAD_NEW_POSTS, false)) {
-                throw new IllegalStateException("Could not create pin for loadable " + loadable);
-            }
-
-            Pin newPin = watchManager.getPinByLoadable(loadable);
-            if (newPin == null) {
-                throw new IllegalStateException("Could not find freshly created pin by loadable " + loadable);
-            }
-
-            if (!startSavingThreadInternal(loadable, postsToSave, newPin)) {
-                return false;
-            }
-
-            postToEventBus(new WatchManager.PinMessages.PinAddedMessage(newPin));
-        }
-
-        if (!ChanSettings.watchEnabled.get() || !ChanSettings.watchBackground.get()) {
-            showToast(context, R.string.thread_layout_background_watcher_is_disabled_message, Toast.LENGTH_LONG);
+            watchManager.createPin(pin);
         }
 
         return true;
-    }
-
-    private boolean startSavingThreadInternal(Loadable loadable, List<Post> postsToSave, Pin newPin) {
-        if (!PinType.hasDownloadFlag(newPin.pinType)) {
-            throw new IllegalStateException("newPin does not have DownloadFlag: " + newPin.pinType);
-        }
-
-        return watchManager.startSavingThread(loadable, postsToSave);
     }
 
     public boolean isPinned() {
         if (!isBound()) return false;
         Pin pin = watchManager.findPinByLoadableId(loadable.id);
         if (pin == null) return false;
-        return PinType.hasWatchNewPostsFlag(pin.pinType);
+        return pin.watching;
     }
 
     public void onSearchVisibilityChanged(boolean visible) {
@@ -525,9 +374,6 @@ public class ThreadPresenter
             return;
         }
 
-        loadable.setLoadableState(result.getLoadable().getLoadableDownloadingState());
-        Logger.d(this, "onChanLoaderData() downloadingState = " + loadable.getLoadableDownloadingState().name());
-
         //allow for search refreshes inside the catalog
         if (result.getLoadable().isCatalogMode() && !TextUtils.isEmpty(searchQuery)) {
             onSearchEntered(searchQuery);
@@ -547,16 +393,16 @@ public class ThreadPresenter
                 }
             }
 
-            loadable.setLastLoaded(result.getPosts().get(result.getPostsCount() - 1).no);
+            loadable.lastLoaded = result.getPosts().get(result.getPostsCount() - 1).no;
             if (loadable.lastViewed == -1) {
-                loadable.setLastViewed(loadable.lastLoaded);
+                loadable.lastViewed = loadable.lastLoaded;
             }
 
             if (more > 0 && loadable.no == result.getLoadable().no) {
                 threadPresenterCallback.showNewPostsNotification(true, more);
                 //deal with any "requests" for a page update
                 if (forcePageUpdate) {
-                    instance(PageRequestManager.class).forceUpdateForBoard(loadable.board);
+                    PageRepository.forceUpdateForBoard(loadable.board);
                     forcePageUpdate = false;
                 }
             }
@@ -577,59 +423,7 @@ public class ThreadPresenter
             loadable.markedNo = -1;
         }
 
-        storeNewPostsIfThreadIsBeingDownloaded(result.getPosts());
-        addHistory();
-
-        // Update loadable in the database
-        databaseManager.runTaskAsync(databaseManager.getDatabaseLoadableManager().updateLoadable(loadable));
-
-        if (!ChanSettings.watchEnabled.get() && !ChanSettings.watchBackground.get()
-                && loadable.getLoadableDownloadingState() == Loadable.LoadableDownloadingState.AlreadyDownloaded) {
-            Pin pin = watchManager.findPinByLoadableId(loadable.id);
-            if (pin != null) {
-                pin.isError = true;
-                pin.watching = false;
-
-                watchManager.updatePin(pin, true);
-            } else {
-                Logger.d(this, "Could not find pin with loadableId = " + loadable.id + ", it was already deleted?");
-            }
-        }
-
-        BackgroundUtils.runOnBackgroundThread(() -> instance(FilterWatchManager.class).onCatalogLoad(result));
-    }
-
-    private void storeNewPostsIfThreadIsBeingDownloaded(List<Post> posts) {
-        if (posts.isEmpty() || loadable.isCatalogMode()
-                || loadable.getLoadableDownloadingState() == Loadable.LoadableDownloadingState.AlreadyDownloaded) {
-            return;
-        }
-
-        Pin pin = watchManager.findPinByLoadableId(loadable.id);
-        if (pin == null || !PinType.hasDownloadFlag(pin.pinType)) {
-            // No pin for this loadable we are probably not downloading this thread
-            // or no downloading flag
-            return;
-        }
-
-        SavedThread savedThread = watchManager.findSavedThreadByLoadableId(loadable.id);
-        if (savedThread == null || savedThread.isStopped || savedThread.isFullyDownloaded) {
-            // Either the thread is not being downloaded or it is stopped or already fully downloaded
-            return;
-        }
-
-        if (!fileManager.baseDirectoryExists(LocalThreadsBaseDirectory.class)) {
-            Logger.d(this, "storeNewPostsIfThreadIsBeingDownloaded() LocalThreadsBaseDirectory does not exist");
-
-            watchManager.stopSavingAllThread();
-            return;
-        }
-
-        if (!threadSaveManager.enqueueThreadToSave(loadable, posts)) {
-            // Probably base directory was removed by the user, can't do anything other than
-            // just stop this download
-            watchManager.stopSavingThread(loadable);
-        }
+        updateDatabaseLoadable();
     }
 
     @Override
@@ -646,7 +440,7 @@ public class ThreadPresenter
         if (!isBound()) return;
         if (chanLoader.getThread() != null && loadable.isThreadMode() && chanLoader.getThread().getPostsCount() > 0) {
             List<Post> posts = chanLoader.getThread().getPosts();
-            loadable.setLastViewed(posts.get(posts.size() - 1).no);
+            loadable.lastViewed = posts.get(posts.size() - 1).no;
         }
 
         Pin pin = watchManager.findPinByLoadableId(loadable.id);
@@ -658,9 +452,6 @@ public class ThreadPresenter
 
         // Update the last seen indicator
         showPosts();
-
-        // Update loadable in the database
-        databaseManager.runTaskAsync(databaseManager.getDatabaseLoadableManager().updateLoadable(loadable));
     }
 
     public void onNewPostsViewClicked() {
@@ -759,7 +550,8 @@ public class ThreadPresenter
      */
     @Override
     public void onPostClicked(Post post) {
-        if (isBound() && loadable.isCatalogMode()) {
+        if (!isBound()) return;
+        if (loadable.isCatalogMode()) {
             highlightPost(post);
             threadPresenterCallback.showThread(Loadable.forThread(post.board,
                     post.no,
@@ -792,7 +584,7 @@ public class ThreadPresenter
         List<Post> posts = threadPresenterCallback.getDisplayingPosts();
         for (Post item : posts) {
             for (PostImage image : item.images) {
-                if (!item.deleted.get() || instance(CacheHandler.class).exists(image.imageUrl)) {
+                if (!item.deleted.get() || cacheHandler.exists(image.imageUrl)) {
                     //deleted posts always have 404'd images, but let it through if the file exists in cache
                     images.add(image);
                     if (image.equalUrl(postImage)) {
@@ -813,6 +605,8 @@ public class ThreadPresenter
     ) {
         if (!isBound()) return null;
 
+        boolean isSaved = databaseSavedReplyManager.isSaved(post.board, post.no);
+
         copyMenu = populateCopyMenuOptions(post);
         filterMenu = populateFilterMenuOptions(post);
 
@@ -820,22 +614,26 @@ public class ThreadPresenter
                 post.no,
                 PostHelper.getTitle(post, loadable),
                 false
-        )) == null) {
+        )) == null && !(loadable.site instanceof ExternalSiteArchive)) {
             menu.add(new FloatingMenuItem<>(POST_OPTION_PIN, R.string.action_pin));
-        } else if (!loadable.isLocal()) {
+        }
+
+        if (loadable.site.siteFeature(Site.SiteFeature.POSTING)) {
             menu.add(new FloatingMenuItem<>(POST_OPTION_QUOTE, R.string.post_quote));
             menu.add(new FloatingMenuItem<>(POST_OPTION_QUOTE_TEXT, R.string.post_quote_text));
         }
 
-        if (loadable.site.siteFeature(Site.SiteFeature.POST_REPORT) && !loadable.isLocal()) {
+        if (loadable.site.siteFeature(Site.SiteFeature.POST_REPORT)) {
             menu.add(new FloatingMenuItem<>(POST_OPTION_REPORT, R.string.post_report));
         }
 
-        if ((loadable.isCatalogMode() || (loadable.isThreadMode() && !post.isOP)) && !loadable.isLocal()) {
-            if (!post.filterStub) {
-                menu.add(new FloatingMenuItem<>(POST_OPTION_HIDE, R.string.post_hide));
+        if (!(loadable.site instanceof ExternalSiteArchive)) {
+            if ((loadable.isCatalogMode() || (loadable.isThreadMode() && !post.isOP))) {
+                if (!post.filterStub) {
+                    menu.add(new FloatingMenuItem<>(POST_OPTION_HIDE, R.string.post_hide));
+                }
+                menu.add(new FloatingMenuItem<>(POST_OPTION_REMOVE, R.string.post_remove));
             }
-            menu.add(new FloatingMenuItem<>(POST_OPTION_REMOVE, R.string.post_remove));
         }
 
         if (loadable.isThreadMode()) {
@@ -850,8 +648,7 @@ public class ThreadPresenter
 
         menu.add(new FloatingMenuItem<>(POST_OPTION_COPY, R.string.post_copy_menu));
 
-        if (loadable.site.siteFeature(Site.SiteFeature.POST_DELETE) && databaseManager.getDatabaseSavedReplyManager()
-                .isSaved(post.board, post.no) && !loadable.isLocal()) {
+        if (loadable.site.siteFeature(Site.SiteFeature.POST_DELETE) && isSaved) {
             menu.add(new FloatingMenuItem<>(POST_OPTION_DELETE, R.string.post_delete));
         }
 
@@ -879,15 +676,10 @@ public class ThreadPresenter
             extraMenu.add(new FloatingMenuItem<>(menuItem.getId(), "Filter " + menuItem.getText().toLowerCase()));
         }
 
-        if (!loadable.isLocal()) {
-            boolean isSaved = databaseManager.getDatabaseSavedReplyManager().isSaved(post.board, post.no);
+        if (!(loadable.site instanceof ExternalSiteArchive)) {
             extraMenu.add(new FloatingMenuItem<>(isSaved ? POST_OPTION_UNSAVE : POST_OPTION_SAVE,
                     isSaved ? R.string.unmark_as_my_post : R.string.mark_as_my_post
             ));
-
-            if (BuildConfig.DEV_BUILD && loadable.no > 0) {
-                extraMenu.add(new FloatingMenuItem<>(POST_OPTION_MOCK_REPLY, R.string.mock_reply));
-            }
         }
 
         return POST_OPTION_EXTRA;
@@ -914,12 +706,20 @@ public class ThreadPresenter
                     if (post.linkables.get(i).type == PostLinkable.Type.SPOILER) continue;
                     String key = post.linkables.get(i).key.toString();
                     String value = post.linkables.get(i).value.toString();
+                    //need to trim off starting spaces for certain media links
+                    String trimmedUrl = (key.charAt(0) == ' ' && key.charAt(1) == ' ') ? key.substring(2) : key;
                     if (value.contains("youtu.be") || value.contains("youtube")) {
-                        //need to trim off starting spaces for youtube links
-                        String url = (key.charAt(0) == ' ' && key.charAt(1) == ' ') ? key.substring(2) : key;
-                        if (added.contains(url)) continue;
-                        keys.add(PostHelper.prependIcon(context, url, BitmapRepository.youtubeIcon, sp(16)));
-                        added.add(url);
+                        if (added.contains(trimmedUrl)) continue;
+                        keys.add(PostHelper.prependIcon(context, trimmedUrl, BitmapRepository.youtubeIcon, sp(16)));
+                        added.add(trimmedUrl);
+                    } else if (value.contains("streamable")) {
+                        if (added.contains(trimmedUrl)) continue;
+                        keys.add(PostHelper.prependIcon(context, trimmedUrl, BitmapRepository.streamableIcon, sp(16)));
+                        added.add(trimmedUrl);
+                    } else if (value.contains("clyp.it")) {
+                        if (added.contains(trimmedUrl)) continue;
+                        keys.add(PostHelper.prependIcon(context, trimmedUrl, BitmapRepository.clypIcon, sp(16)));
+                        added.add(trimmedUrl);
                     } else {
                         keys.add(key);
                     }
@@ -1014,7 +814,7 @@ public class ThreadPresenter
                 if (!isBound()) break;
                 for (Post p : getMatchingIds(post)) {
                     SavedReply saved = SavedReply.fromBoardNoPassword(p.board, p.no, "");
-                    databaseManager.runTask(databaseManager.getDatabaseSavedReplyManager().saveReply(saved));
+                    DatabaseUtils.runTask(databaseSavedReplyManager.saveReply(saved));
                     Pin watchedPin = watchManager.getPinByLoadable(loadable);
                     if (watchedPin != null) {
                         synchronized (this) {
@@ -1028,10 +828,10 @@ public class ThreadPresenter
             case POST_OPTION_UNSAVE:
                 if (!isBound()) break;
                 for (Post p : getMatchingIds(post)) {
-                    SavedReply saved = databaseManager.getDatabaseSavedReplyManager().getSavedReply(p.board, p.no);
+                    SavedReply saved = databaseSavedReplyManager.getSavedReply(p.board, p.no);
                     if (saved != null) {
                         //unsave
-                        databaseManager.runTask(databaseManager.getDatabaseSavedReplyManager().unsaveReply(saved));
+                        DatabaseUtils.runTask(databaseSavedReplyManager.unsaveReply(saved));
                         Pin watchedPin = watchManager.getPinByLoadable(loadable);
                         if (watchedPin != null) {
                             synchronized (this) {
@@ -1046,10 +846,9 @@ public class ThreadPresenter
                 requestData();
                 break;
             case POST_OPTION_PIN:
-                watchManager.createPin(Loadable.forThread(post.board, post.no, PostHelper.getTitle(post, loadable)),
-                        post,
-                        PinType.WATCH_NEW_POSTS
-                );
+                Loadable threadPin = Loadable.forThread(post.board, post.no, PostHelper.getTitle(post, loadable));
+                threadPin.thumbnailUrl = post.image() == null ? null : post.image().getThumbnailUrl();
+                watchManager.createPin(threadPin);
                 break;
             case POST_OPTION_OPEN_BROWSER:
                 if (isBound()) {
@@ -1090,12 +889,6 @@ public class ThreadPresenter
                     }
                 }
                 break;
-            case POST_OPTION_MOCK_REPLY:
-                if (isBound()) {
-                    mockReplyManager.addMockReply(post.board.siteId, loadable.boardCode, loadable.no, post.no);
-                    showToast(context, "Refresh to add mock replies");
-                }
-                break;
         }
     }
 
@@ -1129,39 +922,59 @@ public class ThreadPresenter
 
     @Override
     public void onPostLinkableClicked(Post post, PostLinkable linkable) {
-        if (linkable.type == PostLinkable.Type.QUOTE && isBound()) {
+        if (!isBound()) return;
+        if (linkable.type == PostLinkable.Type.QUOTE) {
             Post linked = PostUtils.findPostById((int) linkable.value, chanLoader.getThread());
             if (linked != null) {
                 threadPresenterCallback.showPostsPopup(post, Collections.singletonList(linked));
             }
         } else if (linkable.type == PostLinkable.Type.LINK) {
             threadPresenterCallback.openLink((String) linkable.value);
-        } else if (linkable.type == PostLinkable.Type.THREAD && isBound()) {
-            CommentParser.ThreadLink link = (CommentParser.ThreadLink) linkable.value;
+        } else if (linkable.type == PostLinkable.Type.THREAD) {
+            ThreadLink link = (ThreadLink) linkable.value;
 
             Board board = loadable.site.board(link.board);
             if (board != null) {
-                Loadable thread = Loadable.forThread(board, link.threadId, "");
+                Loadable thread =
+                        Loadable.forThread(board, link.threadId, "", !(board.site instanceof ExternalSiteArchive));
                 thread.markedNo = link.postId;
 
                 threadPresenterCallback.showThread(thread);
             }
-        } else if (linkable.type == PostLinkable.Type.BOARD && isBound()) {
-            Board board = databaseManager.runTask(databaseManager.getDatabaseBoardManager()
-                    .getBoard(loadable.site, (String) linkable.value));
+        } else if (linkable.type == PostLinkable.Type.BOARD) {
+            Board board = boardManager.getBoard(loadable.site, (String) linkable.value);
             if (board == null) {
                 showToast(context, R.string.site_uses_dynamic_boards);
             } else {
                 threadPresenterCallback.showBoard(Loadable.forCatalog(board));
             }
-        } else if (linkable.type == PostLinkable.Type.SEARCH && isBound()) {
-            CommentParser.SearchLink search = (CommentParser.SearchLink) linkable.value;
-            Board board = databaseManager.runTask(databaseManager.getDatabaseBoardManager()
-                    .getBoard(loadable.site, search.board));
+        } else if (linkable.type == PostLinkable.Type.SEARCH) {
+            SearchLink search = (SearchLink) linkable.value;
+            Board board = boardManager.getBoard(loadable.site, search.board);
             if (board == null) {
                 showToast(context, R.string.site_uses_dynamic_boards);
             } else {
                 threadPresenterCallback.showBoardAndSearch(Loadable.forCatalog(board), search.search);
+            }
+        } else if (linkable.type == PostLinkable.Type.ARCHIVE) {
+            if (linkable.value instanceof ThreadLink) {
+                ThreadLink opPostPair = (ThreadLink) linkable.value;
+                showArchives(opPostPair.board, opPostPair.threadId, opPostPair.postId);
+            } else if (linkable.value instanceof ResolveLink) {
+                ResolveLink toResolve = (ResolveLink) linkable.value;
+                if (toResolve.board.site instanceof ExternalSiteArchive) {
+                    showToast(context, "Calling archive API, just a moment!");
+                    toResolve.resolve((threadLink) -> {
+                        if (threadLink != null) {
+                            showArchives(threadLink.board, threadLink.threadId, threadLink.postId);
+                        } else {
+                            showToast(context, "Failed to resolve thread external post link!");
+                        }
+                    }, new ResolveLink.ResolveParser(toResolve));
+                } else {
+                    // for any dead links that aren't in an archive, assume that they're a link to a previous thread OP
+                    showArchives(toResolve.board.code, toResolve.postId, toResolve.postId);
+                }
             }
         }
     }
@@ -1208,6 +1021,7 @@ public class ThreadPresenter
             && BackgroundUtils.isInForeground()
             && isBound()
             && loadable.isThreadMode()
+            && !(loadable.site instanceof ExternalSiteArchive)
             && chanLoader.getThread() != null
             && !chanLoader.getThread().isClosed()
             && !chanLoader.getThread().isArchived();
@@ -1227,20 +1041,30 @@ public class ThreadPresenter
         if (!chanLoader.getThread().isArchived()) {
             chanLoader.requestMoreData();
         } else {
-            @SuppressLint("InflateParams")
-            final ArchivesLayout dialogView = (ArchivesLayout) inflate(context, R.layout.layout_archives, null);
-            boolean hasContents = dialogView.setBoard(loadable.board);
-            dialogView.setCallback(this);
+            showArchives(loadable.board.code, loadable.no, -1);
+        }
+    }
 
-            if (hasContents) {
-                AlertDialog dialog = new AlertDialog.Builder(context).setView(dialogView)
-                        .setTitle(R.string.thread_show_archives)
-                        .create();
-                dialog.setCanceledOnTouchOutside(true);
-                dialog.show();
-            } else {
-                showToast(context, "No archives for this board or site.");
-            }
+    public void showArchives(String boardCode, int opNo, int postNo) {
+        @SuppressLint("InflateParams")
+        final ArchivesLayout dialogView = (ArchivesLayout) inflate(context, R.layout.layout_archives, null);
+        boolean hasContents = dialogView.setBoard(loadable.board);
+        dialogView.setOpNo(opNo);
+        dialogView.setPostNo(postNo);
+        dialogView.setCallback(this);
+
+        if (loadable.site instanceof ExternalSiteArchive) {
+            // skip the archive picker, re-use the same archive we're already in
+            openArchive((ExternalSiteArchive) loadable.site, boardCode, opNo, postNo);
+        } else if (hasContents) {
+            AlertDialog dialog = new AlertDialog.Builder(context).setView(dialogView)
+                    .setTitle(R.string.thread_view_external_archive)
+                    .create();
+            dialog.setCanceledOnTouchOutside(true);
+            dialogView.attachToDialog(dialog);
+            dialog.show();
+        } else {
+            showToast(context, "No archives for this board or site.");
         }
     }
 
@@ -1264,7 +1088,7 @@ public class ThreadPresenter
     }
 
     private void requestDeletePost(Post post) {
-        SavedReply reply = databaseManager.getDatabaseSavedReplyManager().getSavedReply(post.board, post.no);
+        SavedReply reply = databaseSavedReplyManager.getSavedReply(post.board, post.no);
         if (reply != null) {
             @SuppressLint("InflateParams")
             final View view = LayoutUtils.inflate(context, R.layout.dialog_post_delete, null);
@@ -1282,7 +1106,7 @@ public class ThreadPresenter
     private void deletePostConfirmed(Post post, boolean onlyImageDelete) {
         threadPresenterCallback.showDeleting();
 
-        SavedReply reply = databaseManager.getDatabaseSavedReplyManager().getSavedReply(post.board, post.no);
+        SavedReply reply = databaseSavedReplyManager.getSavedReply(post.board, post.no);
         if (reply != null) {
             post.board.site.actions()
                     .delete(new DeleteRequest(post, reply, onlyImageDelete), new SiteActions.DeleteListener() {
@@ -1351,7 +1175,6 @@ public class ThreadPresenter
 
         text.append("Posted: ").append(PostHelper.getLocalDate(post));
 
-        CacheHandler cacheHandler = instance(CacheHandler.class);
         for (PostImage image : post.images) {
             text.append("\n\nFilename: ").append(image.filename).append(".").append(image.extension);
             if ("webm".equals(image.extension.toLowerCase()) && cacheHandler.exists(image.imageUrl)) {
@@ -1405,26 +1228,9 @@ public class ThreadPresenter
     private void showPosts(boolean refreshAfterHideOrRemovePosts) {
         if (chanLoader != null && chanLoader.getThread() != null) {
             threadPresenterCallback.showPosts(chanLoader.getThread(),
-                    new PostsFilter(order, searchQuery),
+                    new PostsFilter(order, searchQuery, databaseHideManager),
                     refreshAfterHideOrRemovePosts
             );
-        }
-    }
-
-    private void addHistory() {
-        if (!isBound() || chanLoader.getThread() == null) {
-            return;
-        }
-
-        if (!historyAdded && addToLocalBackHistory && ChanSettings.historyEnabled.get() && loadable.isThreadMode()
-                // Do not attempt to add a saved thread to the history
-                && !loadable.isLocal()) {
-            historyAdded = true;
-            History history = new History();
-            history.loadable = loadable;
-            PostImage opImage = chanLoader.getThread().getOp().image();
-            history.thumbnailUrl = opImage != null ? opImage.getThumbnailUrl() : null;
-            databaseManager.runTaskAsync(databaseManager.getDatabaseHistoryManager().addHistory(history));
         }
     }
 
@@ -1460,21 +1266,9 @@ public class ThreadPresenter
     }
 
     @Override
-    public void openArchive(Pair<String, String> domainNamePair) {
+    public void openArchive(ExternalSiteArchive externalSiteArchive, String boardCode, int opNo, int postNo) {
         if (isBound()) {
-            String link = loadable.desktopUrl();
-            link = link.replace("https://boards.4chan.org/", "https://" + domainNamePair.second + "/");
-            openLinkInBrowser(context, link);
-        }
-    }
-
-    public void setContext(Context context) {
-        this.context = context;
-    }
-
-    public void updateLoadable(Loadable.LoadableDownloadingState loadableDownloadingState) {
-        if (isBound()) {
-            loadable.setLoadableState(loadableDownloadingState);
+            showThread(externalSiteArchive.getArchiveLoadable(boardCode, opNo, postNo));
         }
     }
 
@@ -1482,15 +1276,7 @@ public class ThreadPresenter
         if (!isBound()) return;
         Pin pin = watchManager.findPinByLoadableId(loadable.id);
         if (pin != null) {
-            SavedThread savedThread = null;
-
-            if (PinType.hasDownloadFlag(pin.pinType)) {
-                savedThread = watchManager.findSavedThreadByLoadableId(loadable.id);
-            }
-
-            if (savedThread == null) {
-                watchManager.onBottomPostViewed(pin);
-            }
+            watchManager.onBottomPostViewed(pin);
         }
     }
 

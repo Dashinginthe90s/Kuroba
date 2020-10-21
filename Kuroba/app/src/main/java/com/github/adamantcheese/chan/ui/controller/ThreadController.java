@@ -52,8 +52,8 @@ import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 public abstract class ThreadController
         extends Controller
         implements ThreadLayout.ThreadLayoutCallback, ImageViewerController.ImageViewerCallback,
-                   SwipeRefreshLayout.OnRefreshListener, ToolbarNavigationController.ToolbarSearchCallback,
-                   NfcAdapter.CreateNdefMessageCallback, ThreadSlideController.SlideChangeListener {
+        SwipeRefreshLayout.OnRefreshListener, ToolbarNavigationController.ToolbarSearchCallback,
+        NfcAdapter.CreateNdefMessageCallback, ThreadSlideController.SlideChangeListener {
     protected ThreadLayout threadLayout;
     private SwipeRefreshLayout swipeRefreshLayout;
 
@@ -102,8 +102,6 @@ public abstract class ThreadController
     public void showSitesNotSetup() {
         threadLayout.getPresenter().showNoContent();
     }
-
-    public abstract void openPin(Pin pin);
 
     /*
      * Used to save instance state
@@ -218,7 +216,7 @@ public abstract class ThreadController
     }
 
     @Override
-    public void onShowPosts() {
+    public void onShowPosts(Loadable loadable) {
     }
 
     @Override
@@ -268,6 +266,14 @@ public abstract class ThreadController
 
     @Override
     public boolean threadBackPressed() {
+        return false;
+    }
+
+    @Override
+    public boolean isViewingCatalog() {
+        if (doubleNavigationController != null) {
+            return doubleNavigationController.isViewingCatalog();
+        }
         return false;
     }
 }

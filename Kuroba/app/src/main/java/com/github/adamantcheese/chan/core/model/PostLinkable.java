@@ -29,12 +29,14 @@ import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.cell.PostCell;
 import com.github.adamantcheese.chan.ui.theme.Theme;
 
+import java.util.Objects;
+
 import static com.github.adamantcheese.chan.core.model.PostLinkable.Type.LINK;
 import static com.github.adamantcheese.chan.core.model.PostLinkable.Type.QUOTE;
 import static com.github.adamantcheese.chan.core.model.PostLinkable.Type.SPOILER;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.getContrastColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrFloat;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.getContrastColor;
 
 /**
  * A Clickable span that handles post clicks. These are created in PostParser for post quotes, spoilers etc.<br>
@@ -44,12 +46,13 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrFloat;
 public class PostLinkable
         extends ClickableSpan {
     public enum Type {
-        QUOTE,
-        LINK,
-        SPOILER,
-        THREAD,
-        BOARD,
-        SEARCH
+        QUOTE, //key: the quote text, value: Integer, post num in text
+        LINK, //key: the link text, value: String, the link text
+        SPOILER, //key: "SPOILER", value: CharSequence, the spoilered text
+        THREAD, //key: the thread link text, value: ThreadLink, matching the board, opNo, and postNo
+        BOARD, //key: the board link text, value: String, the board code
+        SEARCH, //key: the search link text, value: SearchLink, matchinng the board and search query text
+        ARCHIVE //key: the deadlink text or the `href` for the html tag, value: ThreadLink OR ResolveLink, matching the board, opNo, and postNo or board and postNo, respectively
     }
 
     private final float blendRatio;
@@ -62,7 +65,7 @@ public class PostLinkable
     private boolean spoilerVisible = ChanSettings.revealTextSpoilers.get();
     private int markedNo = -1;
 
-    public PostLinkable(Theme theme, CharSequence key, Object value, Type type) {
+    public PostLinkable(@NonNull Theme theme, CharSequence key, Object value, Type type) {
         blendRatio = getAttrFloat(theme.resValue, R.attr.highlight_linkable_blend);
         quoteColor = getAttrColor(theme.resValue, R.attr.post_quote_color);
         spoilerColor = getAttrColor(theme.resValue, R.attr.post_spoiler_color);
@@ -113,16 +116,7 @@ public class PostLinkable
 
     @Override
     public int hashCode() {
-        int result = 0;
-        for (char c : key.toString().toCharArray()) {
-            result += c;
-        }
-        result = 31 * result;
-        for (char c : value.toString().toCharArray()) {
-            result += c;
-        }
-        result = 31 * result + type.ordinal();
-        return result;
+        return Objects.hash(key.toString(), value.toString(), type.ordinal());
     }
 
     @Override

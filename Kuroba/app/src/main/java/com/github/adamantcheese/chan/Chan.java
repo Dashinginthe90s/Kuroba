@@ -26,24 +26,23 @@ import android.os.Looper;
 import androidx.annotation.NonNull;
 
 import com.github.adamantcheese.chan.core.cache.downloader.FileCacheException;
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
 import com.github.adamantcheese.chan.core.di.AppModule;
 import com.github.adamantcheese.chan.core.di.ManagerModule;
 import com.github.adamantcheese.chan.core.di.NetModule;
 import com.github.adamantcheese.chan.core.di.RepositoryModule;
-import com.github.adamantcheese.chan.core.manager.ArchivesManager;
 import com.github.adamantcheese.chan.core.manager.BoardManager;
 import com.github.adamantcheese.chan.core.manager.ReportManager;
 import com.github.adamantcheese.chan.core.manager.SettingsNotificationManager;
+import com.github.adamantcheese.chan.core.manager.SettingsNotificationManager.SettingNotification;
 import com.github.adamantcheese.chan.core.repository.BitmapRepository;
 import com.github.adamantcheese.chan.core.repository.SiteRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.service.LastPageNotification;
 import com.github.adamantcheese.chan.ui.service.SavingNotification;
 import com.github.adamantcheese.chan.ui.service.WatchNotification;
-import com.github.adamantcheese.chan.ui.settings.SettingNotificationType;
 import com.github.adamantcheese.chan.utils.AndroidUtils;
 import com.github.adamantcheese.chan.utils.Logger;
+import com.github.adamantcheese.chan.utils.NetUtils;
 
 import org.codejargon.feather.Feather;
 import org.greenrobot.eventbus.EventBus;
@@ -68,9 +67,6 @@ public class Chan
     private int activityForegroundCounter = 0;
 
     @Inject
-    DatabaseManager databaseManager;
-
-    @Inject
     SiteRepository siteRepository;
 
     @Inject
@@ -78,9 +74,6 @@ public class Chan
 
     @Inject
     ReportManager reportManager;
-
-    @Inject
-    SettingsNotificationManager settingsNotificationManager;
 
     private static Feather feather;
 
@@ -118,15 +111,11 @@ public class Chan
         SavingNotification.setupChannel();
         LastPageNotification.setupChannel();
 
-        feather = Feather.with(new AppModule(this), new NetModule(), new RepositoryModule(), new ManagerModule());
+        feather = Feather.with(new AppModule(), new NetModule(), new RepositoryModule(), new ManagerModule());
         feather.injectFields(this);
-
-        //Needs to happen before any sites are processed, in case they request archives
-        feather.instance(ArchivesManager.class);
 
         siteRepository.initialize();
         boardManager.initialize();
-        databaseManager.initializeAndTrim();
 
         RxJavaPlugins.setErrorHandler(e -> {
             if (e instanceof UndeliverableException) {
@@ -201,9 +190,10 @@ public class Chan
             System.exit(999);
         });
 
+        SettingsNotificationManager.postNotification(SettingNotification.Default);
         if (ChanSettings.collectCrashLogs.get()) {
-            if (reportManager.hasCrashLogs()) {
-                settingsNotificationManager.notify(SettingNotificationType.CrashLog);
+            if (reportManager.countCrashLogs() > 0) {
+                SettingsNotificationManager.postNotification(SettingNotification.CrashLog);
             }
         }
     }
@@ -273,6 +263,7 @@ public class Chan
     @Override
     public void onActivityDestroyed(@NonNull Activity activity) {
         new Handler(Looper.getMainLooper()).removeCallbacksAndMessages(null);
+        NetUtils.cleanup();
     }
 
     public static class ForegroundChangedMessage {

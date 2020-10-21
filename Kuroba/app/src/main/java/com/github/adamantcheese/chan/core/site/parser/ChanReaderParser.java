@@ -18,7 +18,9 @@ package com.github.adamantcheese.chan.core.site.parser;
 
 import android.util.JsonReader;
 
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 import com.github.adamantcheese.chan.core.database.DatabaseSavedReplyManager;
 import com.github.adamantcheese.chan.core.manager.FilterEngine;
 import com.github.adamantcheese.chan.core.model.Post;
@@ -27,6 +29,7 @@ import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.site.loader.ChanLoaderResponse;
 import com.github.adamantcheese.chan.ui.theme.Theme;
 import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
+import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.NetUtils;
 
 import java.util.ArrayList;
@@ -38,13 +41,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 import javax.inject.Inject;
 
 import static com.github.adamantcheese.chan.Chan.inject;
-import static com.github.adamantcheese.chan.Chan.instance;
 
 /**
  * Process a typical imageboard json response.<br>
@@ -58,22 +59,26 @@ public class ChanReaderParser
     FilterEngine filterEngine;
 
     @Inject
-    ExecutorService pool;
+    DatabaseSavedReplyManager databaseSavedReplyManager;
 
     private Loadable loadable;
     private List<Post> cached;
     private ChanReader reader;
-    private DatabaseSavedReplyManager databaseSavedReplyManager;
 
     private List<Filter> filters;
 
-    public ChanReaderParser(Loadable loadable, List<Post> cachedPosts) {
+    /**
+     * @param loadable    The loadable associated with this parser
+     * @param cachedPosts A list of cached posts; may be an empty list for no cached post processing
+     * @param reader      A reader to process posts for a request; if null, the reader associated with the loadable's site will be used
+     */
+    public ChanReaderParser(Loadable loadable, @NonNull List<Post> cachedPosts, @Nullable ChanReader reader) {
         inject(this);
 
         // Copy the loadable and cached list. The cached array may changed/cleared by other threads.
         this.loadable = loadable.clone();
         cached = new ArrayList<>(cachedPosts);
-        reader = this.loadable.site.chanReader();
+        this.reader = reader == null ? this.loadable.site.chanReader() : reader;
 
         filters = new ArrayList<>();
         List<Filter> enabledFilters = filterEngine.getEnabledFilters();
@@ -83,8 +88,6 @@ public class ChanReaderParser
                 filters.add(filter.clone());
             }
         }
-
-        databaseSavedReplyManager = instance(DatabaseManager.class).getDatabaseSavedReplyManager();
     }
 
     @Override
@@ -127,7 +130,7 @@ public class ChanReaderParser
         internalIds = Collections.unmodifiableSet(internalIds);
 
         List<Callable<Post>> tasks = new ArrayList<>(toParse.size());
-        Theme currentTheme = ThemeHelper.getTheme();
+        final Theme currentTheme = ThemeHelper.getTheme();
 
         for (Post.Builder post : toParse) {
             tasks.add(new PostParseCallable(
@@ -138,12 +141,11 @@ public class ChanReaderParser
                     reader,
                     internalIds,
                     currentTheme,
-                    loadable.isCatalogMode(),
-                    pool
+                    loadable.isCatalogMode()
             ));
         }
 
-        List<Future<Post>> futures = pool.invokeAll(tasks);
+        List<Future<Post>> futures = BackgroundUtils.backgroundService.invokeAll(tasks);
         for (Future<Post> f : futures) {
             Post p = f.get();
             if (p != null) {

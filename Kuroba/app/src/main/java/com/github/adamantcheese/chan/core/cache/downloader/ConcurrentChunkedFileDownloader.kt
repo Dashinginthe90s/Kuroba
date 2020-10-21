@@ -2,6 +2,7 @@ package com.github.adamantcheese.chan.core.cache.downloader
 
 import com.github.adamantcheese.chan.core.cache.CacheHandler
 import com.github.adamantcheese.chan.core.cache.FileCacheV2
+import com.github.adamantcheese.chan.core.settings.ChanSettings
 import com.github.adamantcheese.chan.utils.BackgroundUtils
 import com.github.adamantcheese.chan.utils.StringUtils.maskImageUrl
 import com.github.k1rakishou.fsaf.FileManager
@@ -12,15 +13,13 @@ import okhttp3.HttpUrl
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import javax.inject.Inject
 
-internal class ConcurrentChunkedFileDownloader @Inject constructor(
+internal class ConcurrentChunkedFileDownloader constructor(
         private val fileManager: FileManager,
         private val chunkDownloader: ChunkDownloader,
         private val chunkPersister: ChunkPersister,
         private val chunkMerger: ChunkMerger,
         private val workerScheduler: Scheduler,
-        private val verboseLogs: Boolean,
         activeDownloads: ActiveDownloads,
         cacheHandler: CacheHandler
 ) : FileDownloader(activeDownloads, cacheHandler) {
@@ -69,16 +68,22 @@ internal class ConcurrentChunkedFileDownloader @Inject constructor(
         return Flowable.concat(
                 Flowable.just(FileDownloadResult.Start(chunksCount)),
                 Flowable.defer {
-                            return@defer downloadInternal(
-                                    url,
-                                    chunks,
-                                    partialContentCheckResult,
-                                    output
-                            )
+                    return@defer downloadInternal(
+                            url,
+                            chunks,
+                            partialContentCheckResult,
+                            output
+                    )
+                }
+                        .doOnSubscribe {
+                            if (ChanSettings.verboseLogs.get()) {
+                                log(TAG, "Starting downloading (${maskImageUrl(url)})")
+                            }
                         }
-                        .doOnSubscribe { log(TAG, "Starting downloading (${maskImageUrl(url)})") }
                         .doOnComplete {
-                            log(TAG, "Completed downloading (${maskImageUrl(url)})")
+                            if (ChanSettings.verboseLogs.get()) {
+                                log(TAG, "Completed downloading (${maskImageUrl(url)})")
+                            }
                             removeChunksFromDisk(url)
                         }
                         .doOnError { error ->
@@ -120,7 +125,7 @@ internal class ConcurrentChunkedFileDownloader @Inject constructor(
             partialContentCheckResult: PartialContentCheckResult,
             output: RawFile
     ): Flowable<FileDownloadResult> {
-        if (verboseLogs) {
+        if (ChanSettings.verboseLogs.get()) {
             log(TAG, "File (${maskImageUrl(url)}) was split into chunks: $chunks")
         }
 

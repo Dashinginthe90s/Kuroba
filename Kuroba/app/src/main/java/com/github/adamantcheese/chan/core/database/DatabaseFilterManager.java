@@ -17,29 +17,21 @@
 package com.github.adamantcheese.chan.core.database;
 
 import com.github.adamantcheese.chan.core.model.orm.Filter;
-import com.j256.ormlite.stmt.DeleteBuilder;
 
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.Callable;
 
-import javax.inject.Inject;
-
-import static com.github.adamantcheese.chan.Chan.inject;
-
 public class DatabaseFilterManager {
-    @Inject
     DatabaseHelper helper;
 
-    public DatabaseFilterManager() {
-        inject(this);
+    public DatabaseFilterManager(DatabaseHelper helper) {
+        this.helper = helper;
     }
 
     public Callable<Filter> createFilter(final Filter filter) {
         return () -> {
-            helper.filterDao.create(filter);
+            helper.getFilterDao().create(filter);
             return filter;
         };
     }
@@ -47,7 +39,7 @@ public class DatabaseFilterManager {
     public Callable<List<Filter>> updateFilters(final List<Filter> filters) {
         return () -> {
             for (Filter filter : filters) {
-                helper.filterDao.update(filter);
+                helper.getFilterDao().update(filter);
             }
             return filters;
         };
@@ -55,50 +47,34 @@ public class DatabaseFilterManager {
 
     public Callable<Void> deleteFilter(final Filter filter) {
         return () -> {
-            helper.filterDao.delete(filter);
+            helper.getFilterDao().delete(filter);
             return null;
         };
     }
 
     public Callable<Filter> updateFilter(final Filter filter) {
         return () -> {
-            helper.filterDao.update(filter);
+            helper.getFilterDao().update(filter);
             return filter;
         };
     }
 
     public Callable<List<Filter>> getFilters() {
         return () -> {
-            List<Filter> filters = helper.filterDao.queryForAll();
+            List<Filter> filters = helper.getFilterDao().queryForAll();
             Collections.sort(filters, (lhs, rhs) -> lhs.order - rhs.order);
             updateFilters(filters);
             return filters;
         };
     }
 
-    public Callable<Long> getCount() {
-        return () -> helper.filterDao.countOf();
+    public Callable<Integer> getCount() {
+        return () -> (int) helper.getFilterDao().countOf();
     }
 
     public Callable<Void> deleteFilters(List<Filter> filtersToDelete) {
         return () -> {
-            Set<Integer> filterIdSet = new HashSet<>();
-
-            for (Filter filter : filtersToDelete) {
-                filterIdSet.add(filter.id);
-            }
-
-            DeleteBuilder<Filter, Integer> builder = helper.filterDao.deleteBuilder();
-            builder.where().in("id", filterIdSet);
-
-            int deletedCount = builder.delete();
-
-            if (deletedCount != filterIdSet.size()) {
-                throw new IllegalStateException(
-                        "Deleted count didn't equal filterIdList.size(). (deletedCount = " + deletedCount + "), "
-                                + "(filterIdSet = " + filterIdSet.size() + ")");
-            }
-
+            helper.getFilterDao().delete(filtersToDelete);
             return null;
         };
     }

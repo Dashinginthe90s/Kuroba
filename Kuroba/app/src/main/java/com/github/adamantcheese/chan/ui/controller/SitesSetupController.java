@@ -51,7 +51,6 @@ import java.util.List;
 import javax.inject.Inject;
 
 import static android.widget.LinearLayout.VERTICAL;
-import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
@@ -60,6 +59,9 @@ import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 public class SitesSetupController
         extends StyledToolbarNavigationController
         implements SitesSetupPresenter.Callback, View.OnClickListener {
+
+    @Inject
+    SiteRepository siteRepository;
 
     SitesSetupPresenter presenter;
 
@@ -182,9 +184,7 @@ public class SitesSetupController
 
     @Override
     public void openSiteConfiguration(Site site) {
-        SiteSetupController c = new SiteSetupController(context);
-        c.setSite(site);
-        navigationController.pushController(c);
+        navigationController.pushController(new SiteSetupController(context, site));
     }
 
     @Override
@@ -315,14 +315,10 @@ public class SitesSetupController
     private class SitePreviewAdapter
             extends BaseAdapter {
 
-        @Inject
-        SiteRepository siteRepository;
-
         private List<Class<? extends Site>> siteClasses = new ArrayList<>();
         private AlertDialog dialog;
 
         public SitePreviewAdapter() {
-            inject(this);
             List<String> addedSites = new ArrayList<>();
             for (Site s : siteRepository.all().getAll()) {
                 addedSites.add(s.getClass().getSimpleName());

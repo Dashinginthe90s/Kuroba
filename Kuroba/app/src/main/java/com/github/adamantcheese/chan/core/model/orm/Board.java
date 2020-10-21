@@ -24,6 +24,8 @@ import com.github.adamantcheese.chan.core.site.Site;
 import com.j256.ormlite.field.DatabaseField;
 import com.j256.ormlite.table.DatabaseTable;
 
+import java.util.Objects;
+
 /**
  * A board is something that can be browsed, it is unique by it's site and code.
  */
@@ -307,5 +309,10 @@ public class Board
             //@formatter:on
         }
         return false;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(siteId, code, bumpLimit, imageLimit, cooldownImages);
     }
 }

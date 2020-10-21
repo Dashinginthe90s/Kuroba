@@ -16,17 +16,17 @@
  */
 package com.github.adamantcheese.chan.ui.controller.settings;
 
-import androidx.appcompat.app.AlertDialog;
 import android.content.Context;
 import android.net.Uri;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
+import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.core.presenter.ImportExportSettingsPresenter;
 import com.github.adamantcheese.chan.core.repository.ImportExportRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
@@ -45,7 +45,6 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.inject.Inject;
 
-import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getApplicationLabel;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
@@ -60,8 +59,6 @@ public class ImportExportSettingsController
     FileManager fileManager;
     @Inject
     FileChooser fileChooser;
-    @Inject
-    DatabaseManager databaseManager;
 
     private ImportExportSettingsPresenter presenter;
 
@@ -72,8 +69,6 @@ public class ImportExportSettingsController
 
     public ImportExportSettingsController(Context context, @NonNull OnExportSuccessCallbacks callbacks) {
         super(context);
-
-        inject(this);
 
         this.callbacks = callbacks;
         this.loadingViewController = new LoadingViewController(context, true);
@@ -132,11 +127,10 @@ public class ImportExportSettingsController
     }
 
     private void onExportClicked() {
-        boolean localThreadsLocationIsSAFBacked = ChanSettings.localThreadLocation.isSafDirActive();
         boolean savedFilesLocationIsSAFBacked = ChanSettings.saveLocation.isSafDirActive();
 
-        if (localThreadsLocationIsSAFBacked || savedFilesLocationIsSAFBacked) {
-            showDirectoriesWillBeResetToDefaultDialog(localThreadsLocationIsSAFBacked, savedFilesLocationIsSAFBacked);
+        if (savedFilesLocationIsSAFBacked) {
+            showDirectoriesWillBeResetToDefaultDialog(savedFilesLocationIsSAFBacked);
             return;
         }
 
@@ -144,44 +138,18 @@ public class ImportExportSettingsController
     }
 
     private void showDirectoriesWillBeResetToDefaultDialog(
-            boolean localThreadsLocationIsSAFBacked, boolean savedFilesLocationIsSAFBacked
+            boolean savedFilesLocationIsSAFBacked
     ) {
-        if (!localThreadsLocationIsSAFBacked && !savedFilesLocationIsSAFBacked) {
-            throw new IllegalStateException("Both variables are false, wtf?");
-        }
-
-        String localThreadsString = localThreadsLocationIsSAFBacked
-                ? getString(R.string.import_or_export_warning_local_threads_base_dir)
-                : "";
-        String andString = localThreadsLocationIsSAFBacked && savedFilesLocationIsSAFBacked
-                ? getString(R.string.import_or_export_warning_and)
-                : "";
         String savedFilesString =
                 savedFilesLocationIsSAFBacked ? getString(R.string.import_or_export_warning_saved_files_base_dir) : "";
 
         String messagePartOne = getString(
                 R.string.import_or_export_warning_super_long_message_part_one,
-                localThreadsString,
-                andString,
                 savedFilesString
         );
 
-        String messagePartTwo = "";
-
-        if (localThreadsLocationIsSAFBacked) {
-            long downloadingThreadsCount = databaseManager.runTask(() -> databaseManager.getDatabaseSavedThreadManager()
-                    .countDownloadingThreads()
-                    .call());
-
-            if (downloadingThreadsCount > 0) {
-                messagePartTwo = getString(R.string.import_or_export_warning_super_long_message_part_two);
-            }
-        }
-
-        String fullMessage = String.format("%s %s", messagePartOne, messagePartTwo);
-
         new AlertDialog.Builder(context).setTitle(getString(R.string.import_or_export_warning))
-                .setMessage(fullMessage)
+                .setMessage(messagePartOne)
                 .setPositiveButton(R.string.ok, (dialog, which) -> {
                     dialog.dismiss();
                     showCreateNewOrOverwriteDialog();

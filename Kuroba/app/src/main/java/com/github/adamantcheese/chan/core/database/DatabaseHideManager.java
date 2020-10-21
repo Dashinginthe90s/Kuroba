@@ -4,7 +4,6 @@ import android.annotation.SuppressLint;
 
 import androidx.annotation.Nullable;
 
-import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.orm.PostHide;
 import com.github.adamantcheese.chan.core.site.Site;
@@ -24,26 +23,15 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
-import javax.inject.Inject;
-
-import static com.github.adamantcheese.chan.Chan.inject;
-
 public class DatabaseHideManager {
     private static final long TRIM_TRIGGER = 25000;
     private static final long TRIM_COUNT = 5000;
 
-    @Inject
     DatabaseHelper helper;
 
-    public DatabaseHideManager() {
-        inject(this);
-    }
-
-    public Callable<Void> load() {
-        return () -> {
-            Chan.instance(DatabaseManager.class).trimTable(helper.postHideDao, TRIM_TRIGGER, TRIM_COUNT);
-            return null;
-        };
+    public DatabaseHideManager(DatabaseHelper helper) {
+        this.helper = helper;
+        DatabaseUtils.runTaskAsync(DatabaseUtils.trimTable(helper.getPostHideDao(), TRIM_TRIGGER, TRIM_COUNT));
     }
 
     /**
@@ -51,7 +39,7 @@ public class DatabaseHideManager {
      * to already hidden posts and if there are hides them as well.
      */
     public List<Post> filterHiddenPosts(List<Post> posts, int siteId, String board) {
-        return Chan.instance(DatabaseManager.class).runTask(() -> {
+        return DatabaseUtils.runTask(() -> {
             List<Integer> postNoList = new ArrayList<>(posts.size());
             for (Post post : posts) {
                 postNoList.add(post.no);
@@ -149,7 +137,7 @@ public class DatabaseHideManager {
         }
 
         for (PostHide postHide : newHiddenPosts) {
-            helper.postHideDao.createIfNotExists(postHide);
+            helper.getPostHideDao().createIfNotExists(postHide);
         }
     }
 
@@ -172,7 +160,8 @@ public class DatabaseHideManager {
     private Map<Integer, PostHide> getHiddenPosts(int siteId, String board, List<Integer> postNoList)
             throws SQLException {
 
-        Set<PostHide> hiddenInDatabase = new HashSet<>(helper.postHideDao.queryBuilder()
+        Set<PostHide> hiddenInDatabase = new HashSet<>(helper.getPostHideDao()
+                .queryBuilder()
                 .where()
                 .in("no", postNoList)
                 .and()
@@ -311,7 +300,7 @@ public class DatabaseHideManager {
                 return null;
             }
 
-            helper.postHideDao.createIfNotExists(hide);
+            helper.getPostHideDao().createIfNotExists(hide);
 
             return null;
         };
@@ -321,7 +310,7 @@ public class DatabaseHideManager {
         return () -> {
             for (PostHide postHide : hideList) {
                 if (contains(postHide)) continue;
-                helper.postHideDao.createIfNotExists(postHide);
+                helper.getPostHideDao().createIfNotExists(postHide);
             }
 
             return null;
@@ -335,7 +324,7 @@ public class DatabaseHideManager {
     public Callable<Void> removePostsHide(List<PostHide> hideList) {
         return () -> {
             for (PostHide postHide : hideList) {
-                DeleteBuilder<PostHide, Integer> deleteBuilder = helper.postHideDao.deleteBuilder();
+                DeleteBuilder<PostHide, Integer> deleteBuilder = helper.getPostHideDao().deleteBuilder();
 
                 deleteBuilder.where()
                         .eq("no", postHide.no)
@@ -353,7 +342,8 @@ public class DatabaseHideManager {
 
     private boolean contains(PostHide hide)
             throws SQLException {
-        PostHide inDb = helper.postHideDao.queryBuilder()
+        PostHide inDb = helper.getPostHideDao()
+                .queryBuilder()
                 .where()
                 .eq("no", hide.no)
                 .and()
@@ -376,12 +366,12 @@ public class DatabaseHideManager {
 
     public List<PostHide> getRemovedPostsWithThreadNo(int threadNo)
             throws SQLException {
-        return helper.postHideDao.queryBuilder().where().eq("thread_no", threadNo).and().eq("hide", false).query();
+        return helper.getPostHideDao().queryBuilder().where().eq("thread_no", threadNo).and().eq("hide", false).query();
     }
 
     public Callable<Void> deleteThreadHides(Site site) {
         return () -> {
-            DeleteBuilder<PostHide, Integer> builder = helper.postHideDao.deleteBuilder();
+            DeleteBuilder<PostHide, Integer> builder = helper.getPostHideDao().deleteBuilder();
             builder.where().eq("site", site.id());
             builder.delete();
 

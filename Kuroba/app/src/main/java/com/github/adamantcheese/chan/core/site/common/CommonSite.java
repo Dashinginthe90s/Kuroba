@@ -22,7 +22,6 @@ import androidx.annotation.CallSuper;
 import androidx.annotation.NonNull;
 
 import com.github.adamantcheese.chan.core.model.Post;
-import com.github.adamantcheese.chan.core.model.json.site.SiteConfig;
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.settings.primitives.JsonSettings;
@@ -40,7 +39,6 @@ import com.github.adamantcheese.chan.core.site.http.DeleteResponse;
 import com.github.adamantcheese.chan.core.site.http.HttpCall;
 import com.github.adamantcheese.chan.core.site.http.HttpCall.HttpCallback;
 import com.github.adamantcheese.chan.core.site.http.LoginRequest;
-import com.github.adamantcheese.chan.core.site.http.Reply;
 import com.github.adamantcheese.chan.core.site.http.ReplyResponse;
 import com.github.adamantcheese.chan.core.site.parser.ChanReader;
 import com.github.adamantcheese.chan.core.site.parser.CommentParser;
@@ -48,7 +46,6 @@ import com.github.adamantcheese.chan.core.site.parser.PostParser;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.NetUtils;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -61,7 +58,7 @@ import okhttp3.Response;
 import static android.text.TextUtils.isEmpty;
 
 /**
- * Your base site implementation; take a look at {@link #initialize(int, SiteConfig, JsonSettings)} for the exact items you need to specify.
+ * Your base site implementation; take a look at {@link #initialize(int, JsonSettings)} for the exact items you need to specify.
  * Do note that {@link #setName(String)} and {@link #setIcon(SiteIcon)} should be called in the constructor, otherwise site selection will break.
  * This is an optimization on the site selector that prevents extra work from being done.
  */
@@ -82,8 +79,8 @@ public abstract class CommonSite
     private Boards staticBoards = new Boards();
 
     @Override
-    public void initialize(int id, SiteConfig config, JsonSettings userSettings) {
-        super.initialize(id, config, userSettings);
+    public void initialize(int id, JsonSettings userSettings) {
+        super.initialize(id, userSettings);
         setup();
 
         if ("App Setup".equals(name)) return; // for this special site, we don't need any of the rest of the items
@@ -296,8 +293,12 @@ public abstract class CommonSite
 
         @Override
         public Loadable resolveLoadable(Site site, HttpUrl url) {
-            Matcher board = boardPattern().matcher(url.encodedPath());
-            Matcher thread = threadPattern().matcher(url.encodedPath());
+            StringBuilder urlPath = new StringBuilder();
+            //noinspection KotlinInternalInJava
+            HttpUrl.Companion.toPathString$okhttp(url.pathSegments(), urlPath);
+
+            Matcher board = boardPattern().matcher(urlPath);
+            Matcher thread = threadPattern().matcher(urlPath);
 
             try {
                 if (thread.find()) {
@@ -305,9 +306,9 @@ public abstract class CommonSite
                     if (b == null) {
                         return null;
                     }
-                    Loadable l = Loadable.forThread(b, Integer.parseInt(thread.group(3)), "");
+                    Loadable l = Loadable.forThread(b, Integer.parseInt(thread.group(2)), "");
 
-                    if (isEmpty(url.fragment())) {
+                    if (!isEmpty(url.fragment())) {
                         l.markedNo = Integer.parseInt(url.fragment());
                     }
 
@@ -354,7 +355,7 @@ public abstract class CommonSite
         }
 
         @Override
-        public HttpUrl thread(Board board, Loadable loadable) {
+        public HttpUrl thread(Loadable loadable) {
             return null;
         }
 
@@ -443,8 +444,8 @@ public abstract class CommonSite
         }
 
         @Override
-        public void post(Reply reply, PostListener postListener) {
-            ReplyResponse replyResponse = new ReplyResponse(reply);
+        public void post(Loadable loadableWithDraft, PostListener postListener) {
+            ReplyResponse replyResponse = new ReplyResponse(loadableWithDraft);
 
             MultipartHttpCall call = new MultipartHttpCall(site) {
                 @Override
@@ -453,23 +454,23 @@ public abstract class CommonSite
                 }
             };
 
-            call.url(site.endpoints().reply(reply.loadable));
+            call.url(site.endpoints().reply(loadableWithDraft));
 
             if (requirePrepare()) {
                 BackgroundUtils.runOnBackgroundThread(() -> {
-                    prepare(call, reply, replyResponse);
+                    prepare(call, replyResponse);
                     BackgroundUtils.runOnMainThread(() -> {
-                        setupPost(reply, call);
+                        setupPost(loadableWithDraft, call);
                         makePostCall(call, replyResponse, postListener);
                     });
                 });
             } else {
-                setupPost(reply, call);
+                setupPost(loadableWithDraft, call);
                 makePostCall(call, replyResponse, postListener);
             }
         }
 
-        public void setupPost(Reply reply, MultipartHttpCall call) {
+        public void setupPost(Loadable loadable, MultipartHttpCall call) {
         }
 
         public void handlePost(ReplyResponse response, Response httpResponse, String responseBody) {
@@ -503,7 +504,7 @@ public abstract class CommonSite
             return false;
         }
 
-        public void prepare(MultipartHttpCall call, Reply reply, ReplyResponse replyResponse) {
+        public void prepare(MultipartHttpCall call, ReplyResponse replyResponse) {
         }
 
         @Override
@@ -546,11 +547,6 @@ public abstract class CommonSite
         @Override
         public void pages(Board board, PagesListener pagesListener) {
             pagesListener.onPagesReceived(board, new ChanPages());
-        }
-
-        @Override
-        public void archives(ArchiveRequestListener archivesListener) {
-            archivesListener.onArchivesReceived(new ArrayList<>());
         }
 
         @Override

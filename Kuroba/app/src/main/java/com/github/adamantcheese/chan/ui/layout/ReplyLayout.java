@@ -16,6 +16,10 @@
  */
 package com.github.adamantcheese.chan.ui.layout;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.Resources;
@@ -23,8 +27,10 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.os.Build;
 import android.text.Editable;
+import android.text.SpannableString;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.style.AbsoluteSizeSpan;
 import android.util.AndroidRuntimeException;
 import android.util.AttributeSet;
 import android.view.ActionMode;
@@ -40,6 +46,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -95,9 +102,9 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
 public class ReplyLayout
         extends LoadView
         implements View.OnClickListener, ReplyPresenter.ReplyPresenterCallback, TextWatcher,
-                   ImageDecoder.ImageDecoderCallback, SelectionListeningEditText.SelectionChangedListener,
-                   CaptchaHolder.CaptchaValidationListener {
-    @Inject
+        ImageDecoder.ImageDecoderCallback, SelectionListeningEditText.SelectionChangedListener,
+        CaptchaHolder.CaptchaValidationListener {
+
     ReplyPresenter presenter;
     @Inject
     CaptchaHolder captchaHolder;
@@ -106,10 +113,11 @@ public class ReplyLayout
 
     private AuthenticationLayoutInterface authenticationLayout;
 
-    private boolean blockSelectionChange = false;
+    private boolean blockTextChange = false;
 
     // Progress view (when sending request to the server)
     private View progressLayout;
+    private ProgressBar progressBar;
     private TextView currentProgress;
 
     // Reply views:
@@ -194,6 +202,8 @@ public class ReplyLayout
             inject(this);
         }
 
+        presenter = new ReplyPresenter(getContext(), this);
+
         // Inflate reply input
         replyInputLayout = LayoutUtils.inflate(getContext(), R.layout.layout_reply_input, this, false);
         message = replyInputLayout.findViewById(R.id.message);
@@ -222,6 +232,7 @@ public class ReplyLayout
         submit = replyInputLayout.findViewById(R.id.submit);
 
         progressLayout = LayoutUtils.inflate(getContext(), R.layout.layout_reply_progress, this, false);
+        progressBar = progressLayout.findViewById(R.id.progress_bar);
         currentProgress = progressLayout.findViewById(R.id.current_progress);
 
         // Setup reply layout views
@@ -238,6 +249,7 @@ public class ReplyLayout
         options.addTextChangedListener(this);
         subject.addTextChangedListener(this);
         comment.addTextChangedListener(this);
+        fileName.addTextChangedListener(this);
         comment.setSelectionChangedListener(this);
         comment.setOnFocusChangeListener((view, focused) -> {
             if (!focused) hideKeyboard(comment);
@@ -248,7 +260,10 @@ public class ReplyLayout
         setupOptionsContextMenu();
 
         previewHolder.setOnClickListener(this);
-        previewHolder.setOnLongClickListener(v -> presenter.filenameNewClicked(true));
+        previewHolder.setOnLongClickListener(v -> {
+            presenter.filenameNewClicked(true);
+            return true;
+        });
 
         if (!isInEditMode()) {
             more.setRotation(ChanSettings.moveInputToBottom.get() ? 180f : 0f);
@@ -277,11 +292,6 @@ public class ReplyLayout
         captchaHardReset.setOnClickListener(this);
 
         setView(replyInputLayout);
-
-        // Presenter
-        if (!isInEditMode()) {
-            presenter.create(this);
-        }
     }
 
     public void setCallback(ReplyLayoutCallback callback) {
@@ -523,20 +533,15 @@ public class ReplyLayout
             draft.name = EmojiParser.parseToUnicode(draft.name);
             draft.comment = EmojiParser.parseToUnicode(draft.comment);
         }
-
-        if (isTextDifferent(name, draft.name)) name.setText(draft.name);
-        if (isTextDifferent(subject, draft.subject)) subject.setText(draft.subject);
-        if (isTextDifferent(flag, draft.flag)) flag.setText(draft.flag);
-        if (isTextDifferent(options, draft.options)) options.setText(draft.options);
-        blockSelectionChange = true;
-        if (isTextDifferent(comment, draft.comment)) comment.setText(draft.comment);
-        blockSelectionChange = false;
-        if (isTextDifferent(fileName, draft.fileName)) fileName.setText(draft.fileName);
+        blockTextChange = true;
+        name.setText(draft.name);
+        subject.setText(draft.subject);
+        flag.setText(draft.flag);
+        options.setText(draft.options);
+        fileName.setText(draft.fileName);
+        comment.setText(draft.comment);
+        blockTextChange = false;
         spoiler.setChecked(draft.spoilerImage);
-    }
-
-    private boolean isTextDifferent(EditText text, String compare) {
-        return !text.getText().toString().equals(compare);
     }
 
     @Override
@@ -582,15 +587,76 @@ public class ReplyLayout
     }
 
     @Override
-    public void onPosted() {
-        showToast(getContext(), R.string.reply_success);
+    public void onPosted(boolean newThread, Loadable newLoadable) {
+        if (showToastInsteadOfAnimation(newThread, newLoadable)) {
+            if (newThread) {
+                showToast(getContext(), "Posted new thread \"" + newLoadable.toShortestString() + "\"!");
+            } else {
+                showToast(getContext(), "Posted reply to \"" + newLoadable.toShortestString() + "\"!");
+            }
+            postComplete(newThread, newLoadable);
+        } else {
+            // basically, fade out the progress, fade in a confirmation text, and then switch to the thread
+            AnimatorSet fade = new AnimatorSet();
+
+            ObjectAnimator fadeOutProg = ObjectAnimator.ofFloat(progressBar, View.ALPHA, 0f).setDuration(150);
+            ObjectAnimator fadeOutText = ObjectAnimator.ofFloat(currentProgress, View.ALPHA, 0f).setDuration(150);
+
+            AnimatorSet fadeOutPair = new AnimatorSet();
+            fadeOutPair.playTogether(fadeOutProg, fadeOutText);
+            fadeOutPair.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    SpannableString done;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && ChanSettings.enableEmoji.get()
+                            && ChanSettings.addDubs.get()) {
+                        done = new SpannableString("\uD83D\uDE29\uD83D\uDC4C");
+                    } else {
+                        done = new SpannableString("✓");
+                    }
+                    done.setSpan(new AbsoluteSizeSpan(36, true), 0, done.length(), 0);
+                    currentProgress.setText(done);
+                }
+            });
+
+            ObjectAnimator fadeIn = ObjectAnimator.ofFloat(currentProgress, View.ALPHA, 1f).setDuration(150);
+
+            fade.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    postDelayed(() -> postComplete(newThread, newLoadable), 850);
+                }
+            });
+
+            fade.playSequentially(fadeOutPair, fadeIn);
+            fade.start();
+        }
+    }
+
+    private boolean showToastInsteadOfAnimation(boolean newThread, Loadable newLoadable) {
+        // if new thread
+        //      if not viewing catalog, show toast
+        // if not new thread
+        //      if loadable doesn't match the one passed in, show toast
+        return (newThread && !callback.isViewingCatalog())
+                || (!newThread && !callback.getThread().getLoadable().databaseEquals(newLoadable));
+    }
+
+    private void postComplete(boolean newThread, Loadable newLoadable) {
+        presenter.switchPage(ReplyPresenter.Page.INPUT);
         callback.openReply(false);
+        progressBar.setAlpha(1f);
+        currentProgress.setText("");
+        // only swap to the new thread if on the catalog still
+        if (newThread && callback.isViewingCatalog()) {
+            callback.showThread(newLoadable);
+        }
         callback.requestNewPostLoad();
     }
 
     @Override
-    public void setCommentHint(String hint) {
-        comment.setHint(hint);
+    public void setCommentHint(boolean isThreadMode) {
+        comment.setHint(getString(isThreadMode ? R.string.reply_comment_thread : R.string.reply_comment_board));
     }
 
     @Override
@@ -755,9 +821,7 @@ public class ReplyLayout
 
     @Override
     public void onSelectionChanged() {
-        if (!blockSelectionChange) {
-            presenter.onSelectionChanged();
-        }
+        presenter.onSelectionChanged();
     }
 
     private void setupCommentContextMenu() {
@@ -925,16 +989,12 @@ public class ReplyLayout
 
     @Override
     public void afterTextChanged(Editable s) {
-        if (s.equals(comment.getText())) {
-            presenter.onCommentTextChanged(comment.getText());
-        } else {
+        if (!blockTextChange) {
             presenter.onTextChanged();
         }
-    }
-
-    @Override
-    public void showThread(Loadable loadable) {
-        callback.showThread(loadable);
+        if (s.equals(comment.getText())) {
+            presenter.onCommentTextChanged(comment.getText());
+        }
     }
 
     @Override
@@ -973,7 +1033,7 @@ public class ReplyLayout
 
     @Override
     public void onUploadingProgress(int percent) {
-        currentProgress.setVisibility(percent > 0 ? VISIBLE : INVISIBLE);
+        currentProgress.setAlpha(percent > 0 ? 1f : 0f);
         currentProgress.setText(String.valueOf(percent));
     }
 
@@ -997,5 +1057,7 @@ public class ReplyLayout
         void showImageReencodingWindow();
 
         void updatePadding();
+
+        boolean isViewingCatalog();
     }
 }

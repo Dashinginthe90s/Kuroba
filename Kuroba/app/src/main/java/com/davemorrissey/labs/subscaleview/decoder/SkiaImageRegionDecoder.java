@@ -5,13 +5,17 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
-import android.graphics.*;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.BitmapRegionDecoder;
+import android.graphics.Point;
+import android.graphics.Rect;
 import android.net.Uri;
-import android.os.Build;
+import android.text.TextUtils;
+
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import android.text.TextUtils;
 
 import com.davemorrissey.labs.subscaleview.SubsamplingScaleImageView;
 
@@ -26,13 +30,14 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * using Android's {@link android.graphics.BitmapRegionDecoder}, based on the Skia library. This
  * works well in most circumstances and has reasonable performance due to the cached decoder instance,
  * however it has some problems with grayscale, indexed and CMYK images.
- *
+ * <p>
  * A {@link ReadWriteLock} is used to delegate responsibility for multi threading behaviour to the
  * {@link BitmapRegionDecoder} instance on SDK &gt;= 21, whilst allowing this class to block until no
  * tiles are being loaded before recycling the decoder. In practice, {@link BitmapRegionDecoder} is
  * synchronized internally so this has no real impact on performance.
  */
-public class SkiaImageRegionDecoder implements ImageRegionDecoder {
+public class SkiaImageRegionDecoder
+        implements ImageRegionDecoder {
 
     private BitmapRegionDecoder decoder;
     private final ReadWriteLock decoderLock = new ReentrantReadWriteLock(true);
@@ -63,7 +68,8 @@ public class SkiaImageRegionDecoder implements ImageRegionDecoder {
 
     @Override
     @NonNull
-    public Point init(Context context, @NonNull Uri uri) throws Exception {
+    public Point init(Context context, @NonNull Uri uri)
+            throws Exception {
         String uriString = uri.toString();
         if (uriString.startsWith(RESOURCE_PREFIX)) {
             Resources res;
@@ -91,7 +97,10 @@ public class SkiaImageRegionDecoder implements ImageRegionDecoder {
             decoder = BitmapRegionDecoder.newInstance(context.getResources().openRawResource(id), false);
         } else if (uriString.startsWith(ASSET_PREFIX)) {
             String assetName = uriString.substring(ASSET_PREFIX.length());
-            decoder = BitmapRegionDecoder.newInstance(context.getAssets().open(assetName, AssetManager.ACCESS_RANDOM), false);
+            decoder = BitmapRegionDecoder.newInstance(
+                    context.getAssets().open(assetName, AssetManager.ACCESS_RANDOM),
+                    false
+            );
         } else if (uriString.startsWith(FILE_PREFIX)) {
             decoder = BitmapRegionDecoder.newInstance(uriString.substring(FILE_PREFIX.length()), false);
         } else {
@@ -123,7 +132,8 @@ public class SkiaImageRegionDecoder implements ImageRegionDecoder {
                 options.inPreferredConfig = bitmapConfig;
                 Bitmap bitmap = decoder.decodeRegion(sRect, options);
                 if (bitmap == null) {
-                    throw new RuntimeException("Skia image decoder returned null bitmap - image format may not be supported");
+                    throw new RuntimeException(
+                            "Skia image decoder returned null bitmap - image format may not be supported");
                 }
                 return bitmap;
             } else {

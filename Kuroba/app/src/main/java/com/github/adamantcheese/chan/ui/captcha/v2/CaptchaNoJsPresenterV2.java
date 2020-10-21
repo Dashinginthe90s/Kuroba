@@ -28,7 +28,6 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.inject.Inject;
@@ -54,7 +53,6 @@ public class CaptchaNoJsPresenterV2 {
     private static final String mediaType = "application/x-www-form-urlencoded";
     private static final String recaptchaChallengeString = "reCAPTCHA challenge";
     private static final String verificationTokenString = "fbc-verification-token";
-    private static final int SUCCESS_STATUS_CODE = 200;
     private static final long CAPTCHA_REQUEST_THROTTLE_MS = 3000L;
 
     // this cookie is taken from dashchan
@@ -63,8 +61,6 @@ public class CaptchaNoJsPresenterV2 {
 
     @Inject
     NetModule.OkHttpClientWithUtils okHttpClient;
-    @Inject
-    ExecutorService executor;
 
     private final CaptchaNoJsHtmlParser parser;
 
@@ -80,9 +76,9 @@ public class CaptchaNoJsPresenterV2 {
     private long lastTimeCaptchaRequest = 0L;
 
     public CaptchaNoJsPresenterV2(@Nullable AuthenticationCallbacks callbacks, Context context) {
-        this.callbacks = callbacks;
-        this.parser = new CaptchaNoJsHtmlParser(context);
         inject(this);
+        this.callbacks = callbacks;
+        this.parser = new CaptchaNoJsHtmlParser(context, okHttpClient);
     }
 
     public void init(String siteKey, String baseUrl) {
@@ -114,7 +110,7 @@ public class CaptchaNoJsPresenterV2 {
                 throw new CaptchaNoJsV2Error("C parameter is null");
             }
 
-            executor.submit(() -> {
+            BackgroundUtils.backgroundService.submit(() -> {
                 try {
                     String recaptchaUrl = recaptchaUrlBase + siteKey;
                     RequestBody body = createResponseBody(prevCaptchaInfo, selectedIds);
@@ -174,7 +170,7 @@ public class CaptchaNoJsPresenterV2 {
 
             lastTimeCaptchaRequest = System.currentTimeMillis();
 
-            executor.submit(() -> {
+            BackgroundUtils.backgroundService.submit(() -> {
                 try {
                     try {
                         prevCaptchaInfo = getCaptchaInfo();
@@ -258,7 +254,7 @@ public class CaptchaNoJsPresenterV2 {
     @Nullable
     private CaptchaInfo handleGetRecaptchaResponse(Response response) {
         try {
-            if (response.code() != SUCCESS_STATUS_CODE) {
+            if (!response.isSuccessful()) {
                 if (callbacks != null) {
                     callbacks.onCaptchaInfoParseError(new IOException(
                             "Bad status code for captcha request = " + response.code()));

@@ -2,17 +2,18 @@ package com.github.adamantcheese.chan.core.cache.downloader
 
 import com.github.adamantcheese.chan.core.cache.downloader.DownloaderUtils.isCancellationError
 import com.github.adamantcheese.chan.core.di.NetModule
+import com.github.adamantcheese.chan.core.settings.ChanSettings
 import com.github.adamantcheese.chan.utils.BackgroundUtils
 import com.github.adamantcheese.chan.utils.StringUtils.maskImageUrl
 import io.reactivex.BackpressureStrategy
 import io.reactivex.Flowable
 import okhttp3.*
+import okhttp3.internal.closeQuietly
 import java.io.IOException
 
 internal class ChunkDownloader(
         private val okHttpClient: OkHttpClient,
-        private val activeDownloads: ActiveDownloads,
-        private val verboseLogs: Boolean
+        private val activeDownloads: ActiveDownloads
 ) {
 
     fun downloadChunk(
@@ -28,7 +29,7 @@ internal class ChunkDownloader(
                     "should be only one but actual = $totalChunksCount")
         }
 
-        if (verboseLogs) {
+        if (ChanSettings.verboseLogs.get()) {
             log(TAG, "Start downloading (${maskImageUrl(url)}), chunk ${chunk.start}..${chunk.end}")
         }
 
@@ -52,14 +53,24 @@ internal class ChunkDownloader(
             BackgroundUtils.ensureBackgroundThread()
 
             val serializedEmitter = emitter.serialize()
-            val call = okHttpClient.newCall(httpRequest)
+            val call = okHttpClient.newBuilder()
+                    .addInterceptor(Interceptor.invoke { chain ->
+                        val response = chain.proceed(chain.request())
+                        if ("MISS" == response.header(CF_CACHE_STATUS_HEADER)) {
+                            log(TAG, "CF cache miss, retrying immediately")
+                            response.closeQuietly()
+                            return@invoke chain.proceed(chain.request()) // TODO #1071 this might not be the right solution
+                        }
+                        return@invoke response
+                    }).build()
+                    .newCall(httpRequest)
 
             // This function will be used to cancel a CHUNK (not the whole file) download upon
             // cancellation
             val disposeFunc = {
                 BackgroundUtils.ensureBackgroundThread()
 
-                if (!call.isCanceled()) {
+                if (ChanSettings.verboseLogs.get() && !call.isCanceled()) {
                     log(
                             TAG,
                             "Disposing OkHttp Call for CHUNKED request $request via " +
@@ -114,7 +125,7 @@ internal class ChunkDownloader(
                 }
 
                 override fun onResponse(call: Call, response: Response) {
-                    if (verboseLogs) {
+                    if (ChanSettings.verboseLogs.get()) {
                         val diff = System.currentTimeMillis() - startTime
                         log(TAG, "Got chunk response in (${maskImageUrl(url)}) " +
                                 "${chunk.start}..${chunk.end} in ${diff}ms")
@@ -129,5 +140,6 @@ internal class ChunkDownloader(
 
     companion object {
         private const val TAG = "ChunkDownloader"
+        private const val CF_CACHE_STATUS_HEADER = "CF-Cache-Status"
     }
 }

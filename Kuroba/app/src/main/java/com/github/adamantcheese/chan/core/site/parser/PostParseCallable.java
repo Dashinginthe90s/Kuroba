@@ -16,17 +16,17 @@
  */
 package com.github.adamantcheese.chan.core.site.parser;
 
+import androidx.annotation.NonNull;
+
 import com.github.adamantcheese.chan.core.database.DatabaseSavedReplyManager;
 import com.github.adamantcheese.chan.core.manager.FilterEngine;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.orm.Filter;
 import com.github.adamantcheese.chan.ui.theme.Theme;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
 
 import static com.github.adamantcheese.chan.core.manager.FilterEngine.FilterAction.WATCH;
 
@@ -39,9 +39,8 @@ class PostParseCallable
     private Post.Builder postBuilder;
     private ChanReader reader;
     private final Set<Integer> internalIds;
-    private Theme theme;
+    private final Theme theme;
     private final boolean forCatalog;
-    private ExecutorService pool;
 
     public PostParseCallable(
             FilterEngine filterEngine,
@@ -50,9 +49,8 @@ class PostParseCallable
             Post.Builder builder,
             ChanReader reader,
             Set<Integer> internalIds,
-            Theme theme,
-            boolean forCatalog,
-            ExecutorService pool
+            @NonNull Theme theme,
+            boolean forCatalog
     ) {
         this.filterEngine = filterEngine;
         this.filters = filters;
@@ -62,7 +60,6 @@ class PostParseCallable
         this.internalIds = internalIds;
         this.theme = theme;
         this.forCatalog = forCatalog;
-        this.pool = pool;
     }
 
     @Override
@@ -71,9 +68,7 @@ class PostParseCallable
         postBuilder.isSavedReply(savedReplyManager.isSaved(postBuilder.board, postBuilder.id));
 
         // Process the filters before finish, because parsing the html is dependent on filter matches
-        try {
-            processPostFilter(postBuilder);
-        } catch (Exception ignored) {}
+        processPostFilter(postBuilder);
 
         return reader.getParser().parse(theme, postBuilder, new PostParser.Callback() {
             @Override
@@ -88,34 +83,27 @@ class PostParseCallable
         });
     }
 
-    private void processPostFilter(Post.Builder post)
-            throws InterruptedException {
-        List<Callable<Void>> tasks = new ArrayList<>();
+    private void processPostFilter(Post.Builder post) {
         for (Filter f : filters) {
             FilterEngine.FilterAction action = FilterEngine.FilterAction.forId(f.action);
             if (action == WATCH && !forCatalog)
                 continue; // filter watches are only on catalogs, shortcut the expensive filter stuff
-            tasks.add(() -> {
-                if (filterEngine.matches(f, post)) {
-                    switch (action) {
-                        case COLOR:
-                            post.filter(f.color, false, false, false, f.applyToReplies, f.onlyOnOP, f.applyToSaved);
-                            break;
-                        case HIDE:
-                            post.filter(0, true, false, false, f.applyToReplies, f.onlyOnOP, false);
-                            break;
-                        case REMOVE:
-                            post.filter(0, false, true, false, f.applyToReplies, f.onlyOnOP, false);
-                            break;
-                        case WATCH:
-                            post.filter(0, false, false, true, false, true, false);
-                            break;
-                    }
+            if (filterEngine.matches(f, post)) {
+                switch (action) {
+                    case COLOR:
+                        post.filter(f.color, false, false, false, f.applyToReplies, f.onlyOnOP, f.applyToSaved);
+                        break;
+                    case HIDE:
+                        post.filter(0, true, false, false, f.applyToReplies, f.onlyOnOP, false);
+                        break;
+                    case REMOVE:
+                        post.filter(0, false, true, false, f.applyToReplies, f.onlyOnOP, false);
+                        break;
+                    case WATCH:
+                        post.filter(0, false, false, true, false, true, false);
+                        break;
                 }
-                return null;
-            });
+            }
         }
-
-        pool.invokeAll(tasks); // wait for filtering to be done
     }
 }

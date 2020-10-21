@@ -18,22 +18,19 @@ package com.github.adamantcheese.chan.core.presenter;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.text.TextUtils;
 import android.widget.Toast;
 
 import androidx.exifinterface.media.ExifInterface;
 
 import com.github.adamantcheese.chan.R;
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
-import com.github.adamantcheese.chan.core.repository.LastReplyRepository;
-import com.github.adamantcheese.chan.core.repository.ReplyRepository;
+import com.github.adamantcheese.chan.core.database.DatabaseSavedReplyManager;
+import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.core.manager.WatchManager;
 import com.github.adamantcheese.chan.core.model.ChanThread;
 import com.github.adamantcheese.chan.core.model.Post;
-import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
-import com.github.adamantcheese.chan.core.model.orm.PinType;
 import com.github.adamantcheese.chan.core.model.orm.SavedReply;
+import com.github.adamantcheese.chan.core.repository.LastReplyRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.core.site.SiteActions;
@@ -44,24 +41,23 @@ import com.github.adamantcheese.chan.core.site.sites.chan4.Chan4;
 import com.github.adamantcheese.chan.ui.captcha.AuthenticationLayoutCallback;
 import com.github.adamantcheese.chan.ui.captcha.AuthenticationLayoutInterface;
 import com.github.adamantcheese.chan.ui.helper.ImagePickDelegate;
+import com.github.adamantcheese.chan.ui.helper.PostHelper;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.BitmapUtils;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.adamantcheese.chan.utils.StringUtils;
 
 import java.io.File;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import javax.inject.Inject;
-
+import static com.github.adamantcheese.chan.Chan.instance;
 import static com.github.adamantcheese.chan.core.site.Site.BoardFeature.POSTING_IMAGE;
 import static com.github.adamantcheese.chan.core.site.Site.BoardFeature.POSTING_SPOILER;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
 import static com.github.adamantcheese.chan.utils.PostUtils.getReadableFileSize;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class ReplyPresenter
         implements AuthenticationLayoutCallback, ImagePickDelegate.ImagePickCallback, SiteActions.PostListener {
@@ -74,16 +70,9 @@ public class ReplyPresenter
 
     private Context context;
     private static final Pattern QUOTE_PATTERN = Pattern.compile(">>\\d+");
-    private static final Charset UTF_8 = StandardCharsets.UTF_8;
 
     private ReplyPresenterCallback callback;
-
-    private WatchManager watchManager;
-    private DatabaseManager databaseManager;
-
-    private boolean bound = false;
     private Loadable loadable;
-    private Board board;
     private Reply draft;
 
     private Page page = Page.INPUT;
@@ -92,59 +81,37 @@ public class ReplyPresenter
     private boolean pickingFile;
     private int selectedQuote = -1;
 
-    @Inject
-    public ReplyPresenter(
-            Context context,
-            WatchManager watchManager,
-            DatabaseManager databaseManager
-    ) {
+    public ReplyPresenter(Context context, ReplyPresenterCallback callback) {
         this.context = context;
-        this.watchManager = watchManager;
-        this.databaseManager = databaseManager;
-    }
-
-    public void create(ReplyPresenterCallback callback) {
         this.callback = callback;
     }
 
     public void bindLoadable(Loadable loadable) {
-        if (this.loadable != null) {
-            unbindLoadable();
-        }
-        bound = true;
+        unbindLoadable();
         this.loadable = loadable;
+        this.draft = loadable.draft;
 
-        this.board = loadable.board;
-
-        draft = ReplyRepository.getReply(loadable);
-
-        if (TextUtils.isEmpty(draft.name)) {
-            draft.name = ChanSettings.postDefaultName.get();
-        }
-
-        callback.loadDraftIntoViews(draft);
-        callback.updateCommentCount(0, board.maxCommentChars, false);
-        callback.setCommentHint(getString(loadable.isThreadMode()
-                ? R.string.reply_comment_thread
-                : R.string.reply_comment_board));
-        callback.showCommentCounter(board.maxCommentChars > 0);
+        callback.loadDraftIntoViews(loadable.draft);
+        int length = draft.comment.getBytes(UTF_8).length;
+        callback.updateCommentCount(length, loadable.board.maxCommentChars, length > loadable.board.maxCommentChars);
+        callback.setCommentHint(loadable.isThreadMode());
+        callback.showCommentCounter(loadable.board.maxCommentChars > 0);
         callback.enableImageAttach(canPostImages());
-
-        if (draft.file != null) {
-            showPreview(draft.fileName, draft.file);
-        }
 
         switchPage(Page.INPUT);
     }
 
     public void unbindLoadable() {
-        if (bound) {
-            bound = false;
+        if (loadable != null) {
             callback.loadViewsIntoDraft(draft);
-            ReplyRepository.putReply(draft);
-
-            closeAll();
+            // null out the file/name; only one loadable should have a picked file at a time
+            draft.file = null;
+            draft.fileName = "";
+            loadable = null;
+            draft = null;
         }
+
+        closeAll();
     }
 
     public boolean canPostImages() {
@@ -183,26 +150,26 @@ public class ReplyPresenter
         }
         if (previewOpen) {
             callback.openFileName(moreOpen);
-            if (board.spoilers) {
+            if (loadable.board.spoilers) {
                 callback.openSpoiler(moreOpen, false);
             }
         }
-        boolean is4chan = board.site instanceof Chan4;
+        boolean is4chan = loadable.site instanceof Chan4;
         callback.openCommentQuoteButton(moreOpen);
-        if (board.spoilers) {
+        if (loadable.board.spoilers) {
             callback.openCommentSpoilerButton(moreOpen);
         }
-        if (is4chan && board.code.equals("g")) {
+        if (is4chan && loadable.boardCode.equals("g")) {
             callback.openCommentCodeButton(moreOpen);
         }
-        if (is4chan && board.code.equals("sci")) {
+        if (is4chan && loadable.boardCode.equals("sci")) {
             callback.openCommentEqnButton(moreOpen);
             callback.openCommentMathButton(moreOpen);
         }
-        if (is4chan && (board.code.equals("jp") || board.code.equals("vip"))) {
+        if (is4chan && (loadable.boardCode.equals("jp") || loadable.boardCode.equals("vip"))) {
             callback.openCommentSJISButton(moreOpen);
         }
-        if (is4chan && board.code.equals("pol")) {
+        if (is4chan && loadable.boardCode.equals("pol")) {
             callback.openFlag(moreOpen);
         }
     }
@@ -212,6 +179,7 @@ public class ReplyPresenter
     }
 
     public void onAttachClicked(boolean longPressed) {
+        if (draft == null) return;
         if (!pickingFile) {
             if (previewOpen) {
                 callback.openPreview(false, null);
@@ -219,7 +187,7 @@ public class ReplyPresenter
                 draft.fileName = "";
                 if (moreOpen) {
                     callback.openFileName(false);
-                    if (board.spoilers) {
+                    if (loadable.board.spoilers) {
                         callback.openSpoiler(false, true);
                     }
                 }
@@ -232,7 +200,7 @@ public class ReplyPresenter
     }
 
     public void onSubmitClicked(boolean longClicked) {
-        long timeLeft = LastReplyRepository.getTimeUntilDraftPostable(draft);
+        long timeLeft = LastReplyRepository.getTimeUntilDraftPostable(loadable);
 
         boolean authenticateOnly = timeLeft > 0L && !longClicked;
         if (!onPrepareToSubmit(authenticateOnly)) {
@@ -251,6 +219,7 @@ public class ReplyPresenter
     }
 
     private boolean onPrepareToSubmit(boolean isAuthenticateOnly) {
+        if (draft == null) return false;
         callback.loadViewsIntoDraft(draft);
 
         if (!isAuthenticateOnly && (draft.comment.trim().isEmpty() && draft.file == null)) {
@@ -258,7 +227,7 @@ public class ReplyPresenter
             return false;
         }
 
-        draft.spoilerImage = draft.spoilerImage && board.spoilers;
+        draft.spoilerImage = draft.spoilerImage && loadable.board.spoilers;
         draft.captchaResponse = null;
 
         return true;
@@ -269,48 +238,51 @@ public class ReplyPresenter
     @Override
     public void onPostComplete(ReplyResponse replyResponse) {
         if (replyResponse.posted) {
-            LastReplyRepository.putLastReply(replyResponse.originatingReply);
-            Loadable originatingLoadable = replyResponse.originatingReply.loadable;
+            LastReplyRepository.putLastReply(replyResponse.originatingLoadable);
+            Loadable originatingLoadable = replyResponse.originatingLoadable;
             Loadable newThreadLoadable = Loadable.forThread(originatingLoadable.board,
                     replyResponse.threadNo == 0 ? replyResponse.postNo : replyResponse.threadNo,
                     "Title will update shortly…"
             );
 
             if (ChanSettings.postPinThread.get()) {
+                WatchManager watchManager = instance(WatchManager.class);
                 if (originatingLoadable.isThreadMode()) {
-                    //reply
                     ChanThread thread = callback.getThread();
-                    if (thread != null) {
-                        watchManager.createPin(originatingLoadable, thread.getOp(), PinType.WATCH_NEW_POSTS);
-                    } else {
-                        watchManager.createPin(originatingLoadable);
+                    //ensure that the thread's loadable matches the one from the original reply, in case the user navigated away
+                    if (thread != null && thread.getLoadable() == originatingLoadable) {
+                        // we know the OP, we're in the thread
+                        if (thread.getOp().image() != null) {
+                            originatingLoadable.thumbnailUrl = thread.getOp().image().getThumbnailUrl();
+                        }
                     }
+                    watchManager.createPin(originatingLoadable);
                 } else {
+                    // this is a new thread, we can construct an OP for initial display
+                    Post fakeOP = new Post.Builder().subject(originatingLoadable.draft.subject)
+                            .comment(originatingLoadable.draft.comment)
+                            .board(originatingLoadable.board)
+                            .id(replyResponse.postNo)
+                            .opId(replyResponse.postNo)
+                            .setUnixTimestampSeconds(System.currentTimeMillis() / 1000L)
+                            .build();
+                    newThreadLoadable.title = PostHelper.getTitle(fakeOP, newThreadLoadable);
                     watchManager.createPin(newThreadLoadable);
                 }
             }
 
             SavedReply savedReply = SavedReply.fromBoardNoPassword(originatingLoadable.board,
                     replyResponse.postNo,
-                    replyResponse.originatingReply.password
+                    originatingLoadable.draft.password
             );
-            databaseManager.runTaskAsync(databaseManager.getDatabaseSavedReplyManager().saveReply(savedReply));
+            DatabaseUtils.runTaskAsync(instance(DatabaseSavedReplyManager.class).saveReply(savedReply));
 
-            switchPage(Page.INPUT);
             closeAll();
             highlightQuotes();
-            String name = draft.name;
-            draft = new Reply(originatingLoadable);
 
-            if (originatingLoadable.isCatalogMode()) {
-                //new thread
-                callback.showThread(newThreadLoadable);
-            }
-
-            draft.name = name;
-            ReplyRepository.putReply(draft);
-            callback.loadDraftIntoViews(draft);
-            callback.onPosted();
+            originatingLoadable.draft.reset(true);
+            callback.loadDraftIntoViews(originatingLoadable.draft);
+            callback.onPosted(originatingLoadable.isCatalogMode(), newThreadLoadable);
         } else if (replyResponse.requireAuthentication) {
             switchPage(Page.AUTHENTICATION);
         } else {
@@ -352,10 +324,15 @@ public class ReplyPresenter
     public void onAuthenticationComplete(
             AuthenticationLayoutInterface authenticationLayout, String challenge, String response, boolean autoReply
     ) {
+        if (draft == null) {
+            switchPage(Page.INPUT);
+            return;
+        }
+
         draft.captchaChallenge = challenge;
         draft.captchaResponse = response;
 
-        long timeLeft = LastReplyRepository.getTimeUntilDraftPostable(draft);
+        long timeLeft = LastReplyRepository.getTimeUntilDraftPostable(loadable);
         if (timeLeft > 0L && !autoReply) {
             String errorMessage = getString(R.string.reply_error_message_timer, timeLeft);
             switchPage(Page.INPUT);
@@ -383,7 +360,7 @@ public class ReplyPresenter
 
     public void onCommentTextChanged(CharSequence text) {
         int length = text.toString().getBytes(UTF_8).length;
-        callback.updateCommentCount(length, board.maxCommentChars, length > board.maxCommentChars);
+        callback.updateCommentCount(length, loadable.board.maxCommentChars, length > loadable.board.maxCommentChars);
     }
 
     public void onTextChanged() {
@@ -391,11 +368,11 @@ public class ReplyPresenter
     }
 
     public void onSelectionChanged() {
-        callback.loadViewsIntoDraft(draft);
         highlightQuotes();
     }
 
-    public boolean filenameNewClicked(boolean showToast) {
+    public void filenameNewClicked(boolean showToast) {
+        if (draft == null) return;
         String currentExt = StringUtils.extractFileNameExtension(draft.fileName);
         currentExt = (currentExt == null) ? "" : "." + currentExt;
         draft.fileName = System.currentTimeMillis() + currentExt;
@@ -403,7 +380,6 @@ public class ReplyPresenter
         if (showToast) {
             showToast(context, "Filename changed.");
         }
-        return true;
     }
 
     public void quote(Post post, boolean withText) {
@@ -415,6 +391,7 @@ public class ReplyPresenter
     }
 
     private void handleQuote(Post post, String textQuote) {
+        if (draft == null) return;
         callback.loadViewsIntoDraft(draft);
 
         StringBuilder insert = new StringBuilder();
@@ -451,6 +428,7 @@ public class ReplyPresenter
     @Override
     public void onFilePicked(String name, File file) {
         pickingFile = false;
+        if (draft == null) return;
         draft.file = file;
         draft.fileName = name;
         try {
@@ -459,7 +437,8 @@ public class ReplyPresenter
             if (orientation != ExifInterface.ORIENTATION_UNDEFINED) {
                 callback.openMessage(getString(R.string.file_has_orientation_exif_data));
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         if (BitmapUtils.getImageFormat(file) == Bitmap.CompressFormat.WEBP) {
             callback.openMessage(getString(R.string.file_type_may_not_be_supported));
         }
@@ -497,7 +476,7 @@ public class ReplyPresenter
     }
 
     private void makeSubmitCall() {
-        draft.loadable.site.actions().post(draft, this);
+        loadable.site.actions().post(loadable, this);
         switchPage(Page.LOADING);
     }
 
@@ -542,6 +521,7 @@ public class ReplyPresenter
     }
 
     private void highlightQuotes() {
+        if (draft == null) return;
         Matcher matcher = QUOTE_PATTERN.matcher(draft.comment);
 
         // Find all occurrences of >>\d+ with start and end between selectionStart
@@ -569,7 +549,7 @@ public class ReplyPresenter
         callback.openPreview(true, file);
         if (moreOpen) {
             callback.openFileName(true);
-            if (board.spoilers) {
+            if (loadable.board.spoilers) {
                 callback.openSpoiler(true, false);
             }
         }
@@ -577,7 +557,7 @@ public class ReplyPresenter
         previewOpen = true;
 
         boolean probablyWebm = "webm".equals(StringUtils.extractFileNameExtension(name));
-        int maxSize = probablyWebm ? board.maxWebmSize : board.maxFileSize;
+        int maxSize = probablyWebm ? loadable.board.maxWebmSize : loadable.board.maxFileSize;
         //if the max size is undefined for the board, ignore this message
         if (file != null && file.length() > maxSize && maxSize != -1) {
             String fileSize = getReadableFileSize(file.length());
@@ -589,6 +569,7 @@ public class ReplyPresenter
     }
 
     public void onImageOptionsApplied() {
+        if (draft == null) return;
         showPreview(draft.fileName, draft.file);
     }
 
@@ -621,9 +602,9 @@ public class ReplyPresenter
 
         void openMessage(String message);
 
-        void onPosted();
+        void onPosted(boolean newThread, Loadable newThreadLoadable);
 
-        void setCommentHint(String hint);
+        void setCommentHint(boolean isThreadMode);
 
         void showCommentCounter(boolean show);
 
@@ -660,8 +641,6 @@ public class ReplyPresenter
         void openSpoiler(boolean show, boolean setUnchecked);
 
         void highlightPostNo(int no);
-
-        void showThread(Loadable loadable);
 
         ImagePickDelegate getImagePickDelegate();
 

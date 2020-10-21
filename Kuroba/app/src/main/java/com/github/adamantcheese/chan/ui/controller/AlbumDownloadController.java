@@ -52,7 +52,6 @@ import io.reactivex.android.schedulers.AndroidSchedulers;
 import io.reactivex.disposables.CompositeDisposable;
 import io.reactivex.disposables.Disposable;
 
-import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
@@ -75,8 +74,6 @@ public class AlbumDownloadController
 
     public AlbumDownloadController(Context context) {
         super(context);
-
-        inject(this);
     }
 
     @Override
@@ -273,13 +270,13 @@ public class AlbumDownloadController
         @Override
         public void onBindViewHolder(AlbumDownloadHolder holder, int position) {
             AlbumDownloadItem item = items.get(position);
-            holder.thumbnailView.setPostImage(loadable, item.postImage);
+            holder.thumbnailView.setPostImage(item.postImage);
             setItemChecked(holder, item.checked, false);
         }
 
         @Override
         public void onViewRecycled(@NonNull AlbumDownloadHolder holder) {
-            holder.thumbnailView.setPostImage(loadable, null);
+            holder.thumbnailView.setPostImage(null);
             setItemChecked(holder, false, false);
         }
 

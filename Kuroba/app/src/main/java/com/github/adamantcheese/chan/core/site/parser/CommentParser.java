@@ -23,20 +23,26 @@ import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
+import android.util.JsonReader;
 
 import androidx.annotation.AnyThread;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.manager.ArchivesManager;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostLinkable;
-import com.github.adamantcheese.chan.core.model.orm.Loadable;
+import com.github.adamantcheese.chan.core.model.PostLinkable.Type;
+import com.github.adamantcheese.chan.core.model.orm.Board;
+import com.github.adamantcheese.chan.core.site.ExternalSiteArchive;
+import com.github.adamantcheese.chan.core.site.ExternalSiteArchive.ArchiveSiteUrlHandler;
 import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.core.site.sites.chan4.Chan4;
-import com.github.adamantcheese.chan.ui.layout.ArchivesLayout;
 import com.github.adamantcheese.chan.ui.text.AbsoluteSizeSpanHashed;
 import com.github.adamantcheese.chan.ui.text.ForegroundColorSpanHashed;
 import com.github.adamantcheese.chan.ui.theme.Theme;
+import com.github.adamantcheese.chan.utils.NetUtils;
 
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
@@ -50,9 +56,6 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import javax.inject.Inject;
-
-import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.Chan.instance;
 import static com.github.adamantcheese.chan.core.site.parser.StyleRule.tagRule;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
@@ -66,22 +69,24 @@ public class CommentParser {
     private static final String OP_REPLY_SUFFIX = " (OP)";
     private static final String EXTERN_THREAD_LINK_SUFFIX = " \u2192"; // arrow to the right
 
-    @Inject
-    MockReplyManager mockReplyManager;
-
     private Pattern fullQuotePattern = Pattern.compile("/(\\w+)/\\w+/(\\d+)#p(\\d+)");
     private Pattern quotePattern = Pattern.compile(".*#p(\\d+)");
+
+    // A pattern matching any board links
     private Pattern boardLinkPattern = Pattern.compile("//boards\\.4chan.*?\\.org/(.*?)/");
+    //alternate for some sites (formerly 8chan)
     private Pattern boardLinkPattern8Chan = Pattern.compile("/(.*?)/index.html");
+    // A pattern matching any board search links
     private Pattern boardSearchPattern = Pattern.compile("//boards\\.4chan.*?\\.org/(.*?)/catalog#s=(.*)");
+    // A pattern matching colors for r9k
     private Pattern colorPattern = Pattern.compile("color:#([0-9a-fA-F]+)");
+
+    // The list of rules for this parser, mapping an HTML tag to a list of StyleRules that need to be applied for that tag
     private Map<String, List<StyleRule>> rules = new HashMap<>();
 
     private static final Typeface mona = Typeface.createFromAsset(getAppContext().getAssets(), "font/mona.ttf");
 
     public CommentParser() {
-        inject(this);
-
         // Required tags.
         rule(tagRule("p"));
         rule(tagRule("div"));
@@ -95,7 +100,7 @@ public class CommentParser {
                 .foregroundColor(StyleRule.ForegroundColor.QUOTE)
                 .strikeThrough()
                 .action(this::handleDead));
-        rule(tagRule("span").cssClass("spoiler").link(PostLinkable.Type.SPOILER));
+        rule(tagRule("span").cssClass("spoiler").link(Type.SPOILER));
         rule(tagRule("span").cssClass("fortune").action(this::handleFortune));
         rule(tagRule("span").cssClass("abbr").nullify());
         rule(tagRule("span").foregroundColor(StyleRule.ForegroundColor.INLINE_QUOTE).linkify());
@@ -103,7 +108,7 @@ public class CommentParser {
 
         rule(tagRule("table").action(this::handleTable));
 
-        rule(tagRule("s").link(PostLinkable.Type.SPOILER));
+        rule(tagRule("s").link(Type.SPOILER));
 
         rule(tagRule("strong").bold());
         // these ones are css inline style specific
@@ -132,16 +137,29 @@ public class CommentParser {
         list.add(rule);
     }
 
+    /**
+     * @param quotePattern The quote pattern to use for quotes within a thread, matching the href of an 'a' element<br>
+     *                     Should contain a single matching group that resolves to the post number for the quote
+     */
     public void setQuotePattern(Pattern quotePattern) {
         this.quotePattern = quotePattern;
     }
 
+    /**
+     * @param fullQuotePattern The quote pattern to use for quotes linking outside a thread, matching the href of an 'a' element<br>
+     *                         Should contain three matching groups that resolve to the board code, op number, and post number
+     */
     public void setFullQuotePattern(Pattern fullQuotePattern) {
         this.fullQuotePattern = fullQuotePattern;
     }
 
     public CharSequence handleTag(
-            PostParser.Callback callback, Theme theme, Post.Builder post, String tag, CharSequence text, Element element
+            PostParser.Callback callback,
+            @NonNull Theme theme,
+            Post.Builder post,
+            String tag,
+            CharSequence text,
+            Element element
     ) {
 
         List<StyleRule> rules = this.rules.get(tag);
@@ -161,17 +179,10 @@ public class CommentParser {
     }
 
     private CharSequence handleAnchor(
-            Theme theme, PostParser.Callback callback, Post.Builder post, CharSequence text, Element anchor
+            @NonNull Theme theme, PostParser.Callback callback, Post.Builder post, CharSequence text, Element anchor
     ) {
         CommentParser.Link handlerLink = matchAnchor(post, text, anchor, callback);
-
-        int mockReplyPostNo = mockReplyManager.getLastMockReply(post.board.siteId, post.board.code, post.opId);
-
         SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder();
-
-        if (mockReplyPostNo >= 0) {
-            addMockReply(theme, post, spannableStringBuilder, mockReplyPostNo);
-        }
 
         if (handlerLink != null) {
             addReply(theme, callback, post, handlerLink, spannableStringBuilder);
@@ -181,31 +192,42 @@ public class CommentParser {
     }
 
     private void addReply(
-            Theme theme,
+            @NonNull Theme theme,
             PostParser.Callback callback,
             Post.Builder post,
             Link handlerLink,
             SpannableStringBuilder spannableStringBuilder
     ) {
-        if (handlerLink.type == PostLinkable.Type.THREAD) {
+        if (handlerLink.type == Type.THREAD && !handlerLink.key.toString().contains(EXTERN_THREAD_LINK_SUFFIX)) {
             handlerLink.key = TextUtils.concat(handlerLink.key, EXTERN_THREAD_LINK_SUFFIX);
         }
 
-        if (handlerLink.type == PostLinkable.Type.QUOTE) {
+        if (handlerLink.type == Type.ARCHIVE && (
+                (handlerLink.value instanceof ThreadLink && ((ThreadLink) handlerLink.value).postId == -1)
+                        || handlerLink.value instanceof ResolveLink) && !handlerLink.key.toString()
+                .contains(EXTERN_THREAD_LINK_SUFFIX)) {
+            handlerLink.key = TextUtils.concat(handlerLink.key, EXTERN_THREAD_LINK_SUFFIX);
+        }
+
+        if (handlerLink.type == Type.QUOTE) {
             int postNo = (int) handlerLink.value;
             post.addReplyTo(postNo);
 
             // Append (OP) when it's a reply to OP
-            if (postNo == post.opId) {
+            if (postNo == post.opId && !handlerLink.key.toString().contains(OP_REPLY_SUFFIX)) {
                 handlerLink.key = TextUtils.concat(handlerLink.key, OP_REPLY_SUFFIX);
             }
 
             // Append (You) when it's a reply to a saved reply, (Me) if it's a self reply
             if (callback.isSaved(postNo)) {
                 if (post.isSavedReply) {
-                    handlerLink.key = TextUtils.concat(handlerLink.key, SAVED_REPLY_SELF_SUFFIX);
+                    if (!handlerLink.key.toString().contains(SAVED_REPLY_SELF_SUFFIX)) {
+                        handlerLink.key = TextUtils.concat(handlerLink.key, SAVED_REPLY_SELF_SUFFIX);
+                    }
                 } else {
-                    handlerLink.key = TextUtils.concat(handlerLink.key, SAVED_REPLY_OTHER_SUFFIX);
+                    if (!handlerLink.key.toString().contains(SAVED_REPLY_OTHER_SUFFIX)) {
+                        handlerLink.key = TextUtils.concat(handlerLink.key, SAVED_REPLY_OTHER_SUFFIX);
+                    }
                 }
             }
         }
@@ -216,20 +238,6 @@ public class CommentParser {
         post.addLinkable(pl);
 
         spannableStringBuilder.append(res);
-    }
-
-    private void addMockReply(
-            Theme theme, Post.Builder post, SpannableStringBuilder spannableStringBuilder, int mockReplyPostNo
-    ) {
-        post.addReplyTo(mockReplyPostNo);
-
-        CharSequence replyText = ">>" + mockReplyPostNo + " (MOCK)";
-        SpannableString res = new SpannableString(replyText);
-        PostLinkable pl = new PostLinkable(theme, replyText, mockReplyPostNo, PostLinkable.Type.QUOTE);
-        res.setSpan(pl, 0, res.length(), (250 << Spanned.SPAN_PRIORITY_SHIFT) & Spanned.SPAN_PRIORITY);
-        post.addLinkable(pl);
-
-        spannableStringBuilder.append(res).append('\n');
     }
 
     private CharSequence handleFortune(
@@ -296,15 +304,25 @@ public class CommentParser {
         try {
             if (!(builder.board.site instanceof Chan4)) return text; //4chan only
             int postNo = Integer.parseInt(deadlink.text().substring(2));
-            List<ArchivesLayout.PairForAdapter> boards = instance(ArchivesManager.class).domainsForBoard(builder.board);
-            if (!boards.isEmpty() && builder.op) {
-                //only allow same board deadlinks to be parsed in the OP, as they are likely previous thread links
-                //if a deadlink appears in a regular post that is likely to be a dead post link, we are unable to link to an archive
-                //as there are no URLs that directly will allow you to link to a post and be redirected to the right thread
-                Site site = builder.board.site;
-                String link = site.resolvable().desktopUrl(Loadable.forThread(builder.board, postNo, ""), builder.id);
-                link = link.replace("https://boards.4chan.org/", "https://" + boards.get(0).second + "/");
-                PostLinkable newLinkable = new PostLinkable(theme, link, link, PostLinkable.Type.LINK);
+            List<ExternalSiteArchive> boards = instance(ArchivesManager.class).archivesForBoard(builder.board);
+            if (!boards.isEmpty()) {
+                PostLinkable newLinkable = new PostLinkable(theme,
+                        text,
+                        // if the deadlink is in an external archive, set a resolve link
+                        // if the deadlink is in any other site, we don't have enough info to properly link to stuff, so
+                        // we assume that deadlinks in an OP are previous threads
+                        // and any deadlinks in other posts are deleted posts in the same thread
+                        builder.board.site instanceof ExternalSiteArchive
+                                ? new ResolveLink(builder.board.site,
+                                builder.board.code,
+                                postNo
+                        )
+                                : new ThreadLink(builder.board.code,
+                                        builder.op ? postNo : builder.opId,
+                                        builder.op ? -1 : postNo
+                                ),
+                        Type.ARCHIVE
+                );
                 text = span(text, newLinkable);
                 builder.addLinkable(newLinkable);
             }
@@ -322,29 +340,35 @@ public class CommentParser {
             href = href.substring(href.indexOf('/'));
         }
 
-        PostLinkable.Type t;
+        Type t;
         Object value;
 
         Matcher externalMatcher = fullQuotePattern.matcher(href);
         if (externalMatcher.matches()) {
             String board = externalMatcher.group(1);
             int threadId = Integer.parseInt(externalMatcher.group(2));
-            int postId = Integer.parseInt(externalMatcher.group(3));
+            String postNo = externalMatcher.group(3);
+            int postId = postNo == null ? -1 : Integer.parseInt(postNo);
 
             if (board.equals(post.board.code) && callback.isInternal(postId)) {
                 //link to post in same thread with post number (>>post)
-                t = PostLinkable.Type.QUOTE;
+                t = Type.QUOTE;
                 value = postId;
             } else {
                 //link to post not in same thread with post number (>>post or >>>/board/post)
-                t = PostLinkable.Type.THREAD;
+                //in the case of an archive, set the type to be an archive link
+                t = post.board.site instanceof ExternalSiteArchive ? Type.ARCHIVE : Type.THREAD;
                 value = new ThreadLink(board, threadId, postId);
+                if (href.contains("post") && post.board.site instanceof ExternalSiteArchive) {
+                    // this is an archive post link that needs to be resolved into a threadlink
+                    value = new ResolveLink(post.board.site, board, threadId);
+                }
             }
         } else {
             Matcher quoteMatcher = quotePattern.matcher(href);
             if (quoteMatcher.matches()) {
                 //link to post backup???
-                t = PostLinkable.Type.QUOTE;
+                t = Type.QUOTE;
                 value = Integer.parseInt(quoteMatcher.group(1));
             } else {
                 Matcher boardLinkMatcher = boardLinkPattern.matcher(href);
@@ -352,7 +376,7 @@ public class CommentParser {
                 Matcher boardSearchMatcher = boardSearchPattern.matcher(href);
                 if (boardLinkMatcher.matches() || boardLinkMatcher8Chan.matches()) {
                     //board link
-                    t = PostLinkable.Type.BOARD;
+                    t = Type.BOARD;
                     value = boardLinkMatcher.matches() ? boardLinkMatcher.group(1) : boardLinkMatcher8Chan.group(1);
                 } else if (boardSearchMatcher.matches()) {
                     //search link
@@ -363,11 +387,11 @@ public class CommentParser {
                     } catch (UnsupportedEncodingException e) {
                         search = boardSearchMatcher.group(2);
                     }
-                    t = PostLinkable.Type.SEARCH;
+                    t = Type.SEARCH;
                     value = new SearchLink(board, search);
                 } else {
                     //normal link
-                    t = PostLinkable.Type.LINK;
+                    t = Type.LINK;
                     value = href;
                 }
             }
@@ -396,7 +420,7 @@ public class CommentParser {
     }
 
     public static class Link {
-        public PostLinkable.Type type;
+        public Type type;
         public CharSequence key;
         public Object value;
     }
@@ -410,6 +434,53 @@ public class CommentParser {
             this.board = board;
             this.threadId = threadId;
             this.postId = postId;
+        }
+    }
+
+    // this should only ever be for Archives
+    public static class ResolveLink {
+        public Board board;
+        public int postId;
+
+        public ResolveLink(Site site, String boardCode, int postId) {
+            this.board = Board.fromSiteNameCode(site, "", boardCode);
+            this.postId = postId;
+        }
+
+        public void resolve(@NonNull ResolveCallback callback, @NonNull ResolveParser parser) {
+            NetUtils.makeJsonRequest(((ExternalSiteArchive.ArchiveEndpoints) board.site.endpoints()).resolvePost(board.code,
+                    postId
+            ), new NetUtils.JsonResult<ThreadLink>() {
+                @Override
+                public void onJsonFailure(Exception e) {
+                    callback.onProcessed(null);
+                }
+
+                @Override
+                public void onJsonSuccess(ThreadLink result) {
+                    callback.onProcessed(result);
+                }
+            }, parser, 5000);
+        }
+
+        public interface ResolveCallback {
+            void onProcessed(@Nullable ThreadLink result);
+        }
+
+        public static class ResolveParser
+                implements NetUtils.JsonParser<ThreadLink> {
+            private ResolveLink sourceLink;
+
+            public ResolveParser(ResolveLink source) {
+                sourceLink = source;
+            }
+
+            @Override
+            public ThreadLink parse(JsonReader reader) {
+                return ((ArchiveSiteUrlHandler) sourceLink.board.site.resolvable()).resolveToThreadLink(sourceLink,
+                        reader
+                );
+            }
         }
     }
 

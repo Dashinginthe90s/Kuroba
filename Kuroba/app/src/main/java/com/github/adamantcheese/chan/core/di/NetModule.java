@@ -16,8 +16,6 @@
  */
 package com.github.adamantcheese.chan.core.di;
 
-import android.net.ConnectivityManager;
-
 import androidx.annotation.NonNull;
 
 import com.github.adamantcheese.chan.BuildConfig;
@@ -37,7 +35,6 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
 
 import javax.inject.Singleton;
 
@@ -61,33 +58,26 @@ public class NetModule {
 
     @Provides
     @Singleton
-    public CacheHandler provideCacheHandler(
-            FileManager fileManager, ExecutorService executor
-    ) {
+    public CacheHandler provideCacheHandler(FileManager fileManager) {
         Logger.d(AppModule.DI_TAG, "Cache handler");
 
         File cacheDir = getCacheDir();
         RawFile cacheDirFile = fileManager.fromRawFile(new File(cacheDir, FILE_CACHE_DIR));
         RawFile chunksCacheDirFile = fileManager.fromRawFile(new File(cacheDir, FILE_CHUNKS_CACHE_DIR));
 
-        return new CacheHandler(fileManager,
-                cacheDirFile,
-                chunksCacheDirFile,
-                executor
-        );
+        return new CacheHandler(fileManager, cacheDirFile, chunksCacheDirFile);
     }
 
     @Provides
     @Singleton
     public FileCacheV2 provideFileCacheV2(
-            ConnectivityManager connectivityManager,
             FileManager fileManager,
             CacheHandler cacheHandler,
             SiteResolver siteResolver,
             OkHttpClientWithUtils okHttpClient
     ) {
         Logger.d(AppModule.DI_TAG, "File cache V2");
-        return new FileCacheV2(fileManager, cacheHandler, siteResolver, okHttpClient, connectivityManager);
+        return new FileCacheV2(fileManager, cacheHandler, siteResolver, okHttpClient);
     }
 
     @Provides
@@ -106,10 +96,7 @@ public class NetModule {
     @Singleton
     public OkHttpClientWithUtils provideProxiedOkHttpClient() {
         Logger.d(AppModule.DI_TAG, "Proxied OkHTTP client");
-        return new OkHttpClientWithUtils(new OkHttpClient.Builder().connectTimeout(30, SECONDS)
-                .readTimeout(30, SECONDS)
-                .writeTimeout(30, SECONDS)
-                .protocols(getOkHttpProtocols())
+        return new OkHttpClientWithUtils(new OkHttpClient.Builder().protocols(getOkHttpProtocols())
                 .dns(getOkHttpDnsSelector()));
     }
 

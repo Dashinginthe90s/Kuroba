@@ -16,13 +16,17 @@
  */
 package com.github.adamantcheese.chan.ui.controller;
 
-import androidx.appcompat.app.AlertDialog;
 import android.content.Context;
-import android.net.ConnectivityManager;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.RecyclerView;
@@ -30,17 +34,17 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.controller.Controller;
 import com.github.adamantcheese.chan.controller.NavigationController;
-import com.github.adamantcheese.chan.core.manager.SettingsNotificationManager;
+import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager.History;
+import com.github.adamantcheese.chan.core.manager.SettingsNotificationManager.SettingNotification;
+import com.github.adamantcheese.chan.core.manager.WakeManager;
 import com.github.adamantcheese.chan.core.manager.WatchManager;
 import com.github.adamantcheese.chan.core.manager.WatchManager.PinMessages;
-import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.model.orm.Pin;
-import com.github.adamantcheese.chan.core.model.orm.PinType;
-import com.github.adamantcheese.chan.core.model.orm.SavedThread;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
-import com.github.adamantcheese.chan.ui.adapter.DrawerAdapter;
+import com.github.adamantcheese.chan.ui.adapter.DrawerHistoryAdapter;
+import com.github.adamantcheese.chan.ui.adapter.DrawerPinAdapter;
 import com.github.adamantcheese.chan.ui.controller.settings.MainSettingsController;
-import com.github.adamantcheese.chan.utils.Logger;
+import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 import com.google.android.material.snackbar.Snackbar;
 
 import org.greenrobot.eventbus.EventBus;
@@ -50,36 +54,95 @@ import java.util.List;
 
 import javax.inject.Inject;
 
-import io.reactivex.disposables.CompositeDisposable;
-import io.reactivex.disposables.Disposable;
-
-import static com.github.adamantcheese.chan.Chan.inject;
-import static com.github.adamantcheese.chan.core.model.orm.Loadable.LoadableDownloadingState.DownloadingAndNotViewable;
-import static com.github.adamantcheese.chan.core.model.orm.Loadable.LoadableDownloadingState.DownloadingAndViewable;
+import static android.view.View.GONE;
+import static android.view.View.VISIBLE;
+import static androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_LOCKED_CLOSED;
+import static androidx.drawerlayout.widget.DrawerLayout.LOCK_MODE_UNLOCKED;
+import static androidx.recyclerview.widget.ItemTouchHelper.DOWN;
+import static androidx.recyclerview.widget.ItemTouchHelper.LEFT;
+import static androidx.recyclerview.widget.ItemTouchHelper.RIGHT;
+import static androidx.recyclerview.widget.ItemTouchHelper.UP;
+import static com.github.adamantcheese.chan.ui.controller.DrawerController.HeaderAction.CLEAR;
+import static com.github.adamantcheese.chan.ui.controller.DrawerController.HeaderAction.CLEAR_ALL;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.getRes;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.isConnected;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
+import static java.util.concurrent.TimeUnit.MINUTES;
 
 public class DrawerController
         extends Controller
-        implements DrawerAdapter.Callback {
+        implements DrawerPinAdapter.Callback, DrawerHistoryAdapter.Callback {
     protected FrameLayout container;
     protected DrawerLayout drawerLayout;
     protected LinearLayout drawer;
+
+    protected LinearLayout settings;
+    protected LinearLayout header;
+
     protected RecyclerView recyclerView;
-    protected DrawerAdapter drawerAdapter;
-    private CompositeDisposable compositeDisposable = new CompositeDisposable();
+
+    private boolean pinMode = true;
+
+    public enum HeaderAction {
+        CLEAR,
+        CLEAR_ALL
+    }
+
+    private final Runnable refreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            header.findViewById(R.id.refresh).setVisibility(VISIBLE); // TODO
+        }
+    };
+
+    private final ItemTouchHelper.Callback pinItemTouchHelperCallback = new ItemTouchHelper.Callback() {
+        @Override
+        public int getMovementFlags(
+                @NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder
+        ) {
+            return makeMovementFlags(UP | DOWN, RIGHT | LEFT);
+        }
+
+        @Override
+        public boolean onMove(
+                @NonNull RecyclerView recyclerView,
+                @NonNull RecyclerView.ViewHolder viewHolder,
+                @NonNull RecyclerView.ViewHolder target
+        ) {
+            if (!pinMode) return false;
+            int from = viewHolder.getAdapterPosition();
+            int to = target.getAdapterPosition();
+
+            synchronized (watchManager.getAllPins()) {
+                Pin item = watchManager.getAllPins().remove(from);
+                watchManager.getAllPins().add(to, item);
+            }
+            watchManager.reorder();
+            getPinAdapter().notifyItemMoved(from, to);
+            return true;
+        }
+
+        @Override
+        public void onSwiped(@NonNull RecyclerView.ViewHolder viewHolder, int direction) {
+            synchronized (watchManager.getAllPins()) {
+                onPinRemoved(watchManager.getAllPins().get(viewHolder.getAdapterPosition()));
+            }
+        }
+    };
+    private ItemTouchHelper pinTouchHelper = new ItemTouchHelper(pinItemTouchHelperCallback);
+
+    private Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Inject
     WatchManager watchManager;
+
     @Inject
-    SettingsNotificationManager settingsNotificationManager;
+    WakeManager wakeManager;
 
     public DrawerController(Context context) {
         super(context);
-        inject(this);
         EventBus.getDefault().register(this);
     }
 
@@ -87,42 +150,53 @@ public class DrawerController
     public void onCreate() {
         super.onCreate();
 
-        view = inflate(context, R.layout.controller_navigation_drawer);
+        view = inflate(context,
+                ChanSettings.reverseDrawer.get()
+                        ? R.layout.controller_navigation_drawer_reverse
+                        : R.layout.controller_navigation_drawer
+        );
         container = view.findViewById(R.id.container);
         drawerLayout = view.findViewById(R.id.drawer_layout);
         drawerLayout.setDrawerShadow(R.drawable.panel_shadow, Gravity.LEFT);
         drawer = view.findViewById(R.id.drawer);
+
+        settings = view.findViewById(R.id.settings);
+        ((TextView) settings.findViewById(R.id.settings_text)).setTypeface(ThemeHelper.getTheme().mainFont);
+        onEvent((SettingNotification) null);
+        settings.setOnClickListener(v -> openController(new MainSettingsController(context)));
+
+        view.findViewById(R.id.history).setOnClickListener(this::toggleHistoryMode);
+
+        header = view.findViewById(R.id.header);
+        header.findViewById(R.id.refresh).setOnClickListener(v -> {
+            if (pinMode) {
+                wakeManager.onBroadcastReceived(false);
+                v.setVisibility(GONE);
+                mainHandler.postDelayed(refreshRunnable, MINUTES.toMillis(5));
+            } else {
+                if (recyclerView.getAdapter() == null) return;
+                ((DrawerHistoryAdapter) recyclerView.getAdapter()).load();
+            }
+        });
+        header.findViewById(R.id.clear).setOnClickListener(v -> onHeaderClicked(CLEAR));
+        header.findViewById(R.id.clear).setOnLongClickListener(v -> onHeaderClicked(CLEAR_ALL));
+
         recyclerView = view.findViewById(R.id.drawer_recycler_view);
         recyclerView.setHasFixedSize(true);
-        //TODO change stuff here
-        //((LinearLayoutManager) recyclerView.getLayoutManager()).setReverseLayout(put some settitng here);
 
-        drawerAdapter = new DrawerAdapter(this);
-        recyclerView.setAdapter(drawerAdapter);
-
-        ItemTouchHelper itemTouchHelper = new ItemTouchHelper(drawerAdapter.getItemTouchHelperCallback());
-        itemTouchHelper.attachToRecyclerView(recyclerView);
+        recyclerView.setAdapter(new DrawerPinAdapter(this));
+        pinTouchHelper.attachToRecyclerView(recyclerView);
 
         updateBadge();
-
-        Disposable disposable = settingsNotificationManager.listenForNotificationUpdates()
-                .subscribe(activeNotifications -> drawerAdapter.onNotificationsChanged(),
-                        (error) -> Logger.e(DrawerController.this,
-                                "Unknown error from SettingsNotificationManager",
-                                error
-                        )
-                );
-
-        compositeDisposable.add(disposable);
     }
 
     @Override
     public void onDestroy() {
-        super.onDestroy();
-
-        compositeDisposable.clear();
+        pinTouchHelper.attachToRecyclerView(null);
         recyclerView.setAdapter(null);
+        mainHandler.removeCallbacks(refreshRunnable);
         EventBus.getDefault().unregister(this);
+        super.onDestroy();
     }
 
     public void setChildController(Controller childController) {
@@ -151,91 +225,81 @@ public class DrawerController
     public void onPinClicked(Pin pin) {
         ThreadController threadController = getTopThreadController();
         if (threadController != null) {
-            Loadable.LoadableDownloadingState state = Loadable.LoadableDownloadingState.NotDownloading;
-
-            if (PinType.hasDownloadFlag(pin.pinType)) {
-                // Try to load saved copy of a thread if pinned thread has an error flag but only if
-                // we are downloading this thread. Otherwise it will break archived threads that are not
-                // being downloaded
-                SavedThread savedThread = watchManager.findSavedThreadByLoadableId(pin.loadable.id);
-                if (savedThread != null) {
-                    // Do not check for isArchived here since we don't want to show archived threads
-                    // as local threads
-                    if (pin.isError) {
-                        state = Loadable.LoadableDownloadingState.AlreadyDownloaded;
-                    } else {
-                        if (savedThread.isFullyDownloaded) {
-                            state = Loadable.LoadableDownloadingState.AlreadyDownloaded;
-                        } else {
-                            boolean hasNoNetwork = !isConnected(ConnectivityManager.TYPE_MOBILE) && !isConnected(
-                                    ConnectivityManager.TYPE_WIFI);
-
-                            if (hasNoNetwork) {
-                                // No internet connection, but we have a local copy of this thread,
-                                // so show it instead of an empty screen.
-                                state = DownloadingAndViewable;
-                            } else {
-                                state = DownloadingAndNotViewable;
-                            }
-                        }
-                    }
-                }
+            if (threadController instanceof BrowseController) {
+                threadController.showThread(pin.loadable);
+            } else if (threadController instanceof ViewThreadController) {
+                ((ViewThreadController) threadController).loadThread(pin.loadable);
             }
-
-            pin.loadable.setLoadableState(state);
-            threadController.openPin(pin);
         }
         // Post it to avoid animation jumping because the first frame is heavy.
         drawerLayout.post(() -> drawerLayout.closeDrawers());
     }
 
     @Override
-    public void onHeaderClicked(DrawerAdapter.HeaderAction headerAction) {
-        if (headerAction == DrawerAdapter.HeaderAction.CLEAR || headerAction == DrawerAdapter.HeaderAction.CLEAR_ALL) {
-            final boolean all =
-                    headerAction == DrawerAdapter.HeaderAction.CLEAR_ALL || !ChanSettings.watchEnabled.get();
-            final boolean hasDownloadFlag = watchManager.hasAtLeastOnePinWithDownloadFlag();
-
-            if (all && hasDownloadFlag) {
-                // Some pins may have threads that have saved copies on the disk. We want to warn the
-                // user that this action will delete them as well
-                new AlertDialog.Builder(context).setTitle(R.string.warning)
-                        .setMessage(R.string.drawer_controller_at_least_one_pin_has_download_flag)
-                        .setNegativeButton(R.string.drawer_controller_do_not_delete,
-                                (dialog, which) -> dialog.dismiss()
-                        )
-                        .setPositiveButton(R.string.drawer_controller_delete_all_pins,
-                                ((dialog, which) -> onHeaderClickedInternal(true, true))
-                        )
-                        .create()
-                        .show();
-                return;
-            }
-
-            onHeaderClickedInternal(all, hasDownloadFlag);
-        }
-    }
-
-    private void onHeaderClickedInternal(boolean all, boolean hasDownloadFlag) {
-        final List<Pin> pins = watchManager.clearPins(all);
-        if (!pins.isEmpty()) {
-            if (!hasDownloadFlag) {
-                // We can't undo this operation when there is at least one pin that downloads a thread
-                // because we will be deleting files from the disk. We don't want to warn the user
-                // every time he deletes one pin.
-                String text = getQuantityString(R.plurals.bookmark, pins.size(), pins.size());
-                Snackbar snackbar = Snackbar.make(drawerLayout, getString(R.string.drawer_pins_cleared, text), 4000);
-                snackbar.setGestureInsetBottomIgnored(true);
-                snackbar.setAction(R.string.undo, v -> watchManager.addAll(pins));
-                snackbar.show();
+    public void onHistoryClicked(History history) {
+        ThreadController threadController = getTopThreadController();
+        if (history != null && history.loadable != null && threadController != null) {
+            if (threadController instanceof BrowseController) {
+                threadController.showThread(history.loadable);
+            } else if (threadController instanceof ViewThreadController) {
+                ((ViewThreadController) threadController).loadThread(history.loadable);
             }
         } else {
-            int text = watchManager.getAllPins().isEmpty()
-                    ? R.string.drawer_pins_non_cleared
-                    : R.string.drawer_pins_non_cleared_try_all;
+            showToast(context, "Error opening history!");
+        }
+        // Post it to avoid animation jumping because the first frame is heavy.
+        drawerLayout.post(() -> drawerLayout.closeDrawers());
+    }
+
+    public boolean onHeaderClicked(HeaderAction headerAction) {
+        onHeaderClickedInternal(headerAction == CLEAR_ALL || !ChanSettings.watchEnabled.get());
+        return true;
+    }
+
+    private void onHeaderClickedInternal(boolean all) {
+        final List<Pin> pins = watchManager.clearPins(all);
+        if (!pins.isEmpty()) {
+            String text = getQuantityString(R.plurals.bookmark, pins.size(), pins.size());
+            Snackbar snackbar = Snackbar.make(drawerLayout, getString(R.string.drawer_pins_cleared, text), 4000);
+            snackbar.setGestureInsetBottomIgnored(true);
+            snackbar.setAction(R.string.undo, v -> watchManager.addAll(pins));
+            snackbar.show();
+        } else {
+            int text;
+            synchronized (watchManager.getAllPins()) {
+                text = watchManager.getAllPins().isEmpty()
+                        ? R.string.drawer_pins_non_cleared
+                        : R.string.drawer_pins_non_cleared_try_all;
+            }
             Snackbar snackbar = Snackbar.make(drawerLayout, text, Snackbar.LENGTH_LONG);
             snackbar.setGestureInsetBottomIgnored(true);
             snackbar.show();
+        }
+    }
+
+    private void toggleHistoryMode(View historyView) {
+        if (pinMode) {
+            // swap to history mode
+            pinMode = false;
+            recyclerView.setAdapter(null);
+            ((ImageView) historyView).setImageResource(R.drawable.ic_bookmark_themed_24dp);
+            ((TextView) header.findViewById(R.id.header_text)).setText(R.string.drawer_history);
+            mainHandler.removeCallbacks(refreshRunnable);
+            header.findViewById(R.id.clear).setVisibility(GONE);
+            header.findViewById(R.id.refresh).setVisibility(VISIBLE);
+
+            pinTouchHelper.attachToRecyclerView(null);
+            recyclerView.setAdapter(new DrawerHistoryAdapter(this));
+        } else {
+            // swap to pin mode
+            pinMode = true;
+            recyclerView.setAdapter(null);
+            ((ImageView) historyView).setImageResource(R.drawable.ic_history_themed_24dp);
+            ((TextView) header.findViewById(R.id.header_text)).setText(R.string.drawer_pinned);
+            header.findViewById(R.id.clear).setVisibility(VISIBLE);
+
+            pinTouchHelper.attachToRecyclerView(recyclerView);
+            recyclerView.setAdapter(new DrawerPinAdapter(this));
         }
     }
 
@@ -246,40 +310,27 @@ public class DrawerController
 
         Snackbar snackbar;
 
-        if (!PinType.hasDownloadFlag(pin.pinType)) {
-            snackbar = Snackbar.make(drawerLayout,
-                    getString(R.string.drawer_pin_removed, pin.loadable.title),
-                    Snackbar.LENGTH_LONG
-            );
+        snackbar = Snackbar.make(drawerLayout,
+                getString(R.string.drawer_pin_removed, pin.loadable.title),
+                Snackbar.LENGTH_LONG
+        );
 
-            snackbar.setAction(R.string.undo, v -> watchManager.createPin(undoPin));
-        } else {
-            snackbar = Snackbar.make(drawerLayout,
-                    getString(R.string.drawer_pin_with_saved_thread_removed, pin.loadable.title),
-                    Snackbar.LENGTH_LONG
-            );
-        }
+        snackbar.setAction(R.string.undo, v -> watchManager.createPin(undoPin));
         snackbar.setGestureInsetBottomIgnored(true);
         snackbar.show();
     }
 
-    @Override
-    public void openSettings() {
-        openController(new MainSettingsController(context));
-    }
-
-    @Override
-    public void openHistory() {
-        openController(new HistoryController(context));
-    }
-
     public void setPinHighlighted(Pin pin) {
-        drawerAdapter.setPinHighlighted(recyclerView, pin);
+        if (recyclerView.getAdapter() == null || !pinMode) return;
+        getPinAdapter().setHighlightedPin(pin);
     }
 
     @Subscribe
     public void onEvent(PinMessages.PinAddedMessage message) {
-        drawerAdapter.onPinAdded(message.pin);
+        if (recyclerView.getAdapter() == null || !pinMode) return;
+        synchronized (watchManager.getAllPins()) {
+            getPinAdapter().notifyItemInserted(watchManager.getAllPins().indexOf(message.pin));
+        }
         if (ChanSettings.drawerAutoOpenCount.get() < 5 || ChanSettings.alwaysOpenDrawer.get()) {
             drawerLayout.openDrawer(drawer);
             //max out at 5
@@ -298,26 +349,49 @@ public class DrawerController
 
     @Subscribe
     public void onEvent(PinMessages.PinRemovedMessage message) {
-        drawerAdapter.onPinRemoved(message.index);
+        if (recyclerView.getAdapter() == null || !pinMode) return;
+        getPinAdapter().notifyItemRemoved(message.index);
         updateBadge();
     }
 
     @Subscribe
     public void onEvent(PinMessages.PinChangedMessage message) {
-        drawerAdapter.onPinChanged(recyclerView, message.pin);
+        if (recyclerView.getAdapter() == null || !pinMode) return;
+        synchronized (watchManager.getAllPins()) {
+            // notify with an unused Object to indicate a "partial" update, which prevents onViewRecycled being called
+            // this prevents flicker every time a thread updates
+            getPinAdapter().notifyItemChanged(watchManager.getAllPins().indexOf(message.pin), new Object());
+        }
         updateBadge();
     }
 
     @Subscribe
     public void onEvent(PinMessages.PinsChangedMessage message) {
-        drawerAdapter.notifyDataSetChanged();
+        if (recyclerView.getAdapter() == null || !pinMode) return;
+        getPinAdapter().notifyDataSetChanged();
         updateBadge();
     }
 
+    private DrawerPinAdapter getPinAdapter() {
+        return (DrawerPinAdapter) recyclerView.getAdapter();
+    }
+
+    @Subscribe(sticky = true)
+    public void onEvent(SettingNotification notification) {
+        if (settings == null) return;
+        SettingNotification type = EventBus.getDefault().getStickyEvent(SettingNotification.class);
+
+        ImageView notificationIcon = settings.findViewById(R.id.setting_notification_icon);
+        if (type != SettingNotification.Default) {
+            notificationIcon.setVisibility(VISIBLE);
+            notificationIcon.setColorFilter(getRes().getColor(type.getNotificationIconTintColor()));
+        } else {
+            notificationIcon.setVisibility(GONE);
+        }
+    }
+
     public void setDrawerEnabled(boolean enabled) {
-        drawerLayout.setDrawerLockMode(enabled ? DrawerLayout.LOCK_MODE_UNLOCKED : DrawerLayout.LOCK_MODE_LOCKED_CLOSED,
-                Gravity.LEFT
-        );
+        drawerLayout.setDrawerLockMode(enabled ? LOCK_MODE_UNLOCKED : LOCK_MODE_LOCKED_CLOSED, Gravity.LEFT);
         if (!enabled) {
             drawerLayout.closeDrawer(drawer);
         }
@@ -327,10 +401,6 @@ public class DrawerController
         int total = 0;
         boolean color = false;
         for (Pin p : watchManager.getWatchingPins()) {
-            if (!PinType.hasWatchNewPostsFlag(p.pinType)) {
-                continue;
-            }
-
             if (p.watching || p.archived) {
                 total += p.getNewPostCount();
                 color = color | p.getNewQuoteCount() > 0;

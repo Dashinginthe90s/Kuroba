@@ -20,41 +20,56 @@ import android.content.res.AssetManager;
 import android.util.JsonReader;
 
 import com.github.adamantcheese.chan.core.model.orm.Board;
-import com.github.adamantcheese.chan.core.site.SiteActions;
+import com.github.adamantcheese.chan.core.site.ExternalSiteArchive;
+import com.github.adamantcheese.chan.core.site.FoolFuukaArchive;
 import com.github.adamantcheese.chan.core.site.sites.chan4.Chan4;
-import com.github.adamantcheese.chan.ui.layout.ArchivesLayout;
 import com.github.adamantcheese.chan.utils.Logger;
+import com.github.adamantcheese.chan.utils.NetUtils;
 
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
+import okhttp3.HttpUrl;
 
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
 
 public class ArchivesManager
-        implements SiteActions.ArchiveRequestListener {
-    private List<Archives> archivesList;
+        implements NetUtils.JsonResult<List<ExternalSiteArchive>>, NetUtils.JsonParser<List<ExternalSiteArchive>> {
+    private List<ExternalSiteArchive> archivesList;
+
+    private Map<String, Class<? extends ExternalSiteArchive>> jsonMapping = new HashMap<>();
 
     public ArchivesManager() {
+        // setup mappings (nothing for fuuka, doesn't have an API)
+        jsonMapping.put("foolfuuka", FoolFuukaArchive.class);
+        jsonMapping.put("fuuka", null);
+
         //setup the archives list from the internal file, populated when you build the application
         AssetManager assetManager = getAppContext().getAssets();
         try {
-            InputStream json = assetManager.open("archives.json");
-            JsonReader reader = new JsonReader(new InputStreamReader(json));
-            archivesList = parseArchives(reader);
+            // archives.json should only contain FoolFuuka archives, as no other proper archiving software with an API seems to exist
+            try (JsonReader reader = new JsonReader(new InputStreamReader(assetManager.open("archives.json")))) {
+                archivesList = parse(reader);
+            }
         } catch (Exception e) {
             Logger.d(this, "Unable to load/parse internal archives list");
         }
+
+        // fresh copy request, in case of updates
+        NetUtils.makeJsonRequest(HttpUrl.get("https://4chenz.github.io/archives.json/archives.json"), this, this);
     }
 
-    public List<ArchivesLayout.PairForAdapter> domainsForBoard(Board b) {
-        List<ArchivesLayout.PairForAdapter> result = new ArrayList<>();
+    public List<ExternalSiteArchive> archivesForBoard(Board b) {
+        List<ExternalSiteArchive> result = new ArrayList<>();
         if (archivesList == null || !(b.site instanceof Chan4)) return result; //4chan only
-        for (Archives a : archivesList) {
-            for (String code : a.boards) {
+        for (ExternalSiteArchive a : archivesList) {
+            for (String code : a.boardCodes) {
                 if (code.equals(b.code)) {
-                    result.add(new ArchivesLayout.PairForAdapter(a.name, a.domain));
+                    result.add(a);
                     break;
                 }
             }
@@ -62,31 +77,41 @@ public class ArchivesManager
         return result;
     }
 
-    public static List<Archives> parseArchives(JsonReader reader)
+    @Override
+    public List<ExternalSiteArchive> parse(JsonReader reader)
             throws Exception {
-        List<ArchivesManager.Archives> archives = new ArrayList<>();
+        List<ExternalSiteArchive> archives = new ArrayList<>();
 
         reader.beginArray();
         while (reader.hasNext()) {
-            ArchivesManager.Archives a = new ArchivesManager.Archives();
-
             reader.beginObject();
+            String name = "";
+            String domain = "";
+            String software = "";
+            List<String> boardCodes = Collections.emptyList();
+            boolean search = false;
             while (reader.hasNext()) {
                 switch (reader.nextName()) {
                     case "name":
-                        a.name = reader.nextString();
+                        name = reader.nextString();
                         break;
                     case "domain":
-                        a.domain = reader.nextString();
+                        domain = reader.nextString();
+                        break;
+                    case "software":
+                        software = reader.nextString();
                         break;
                     case "boards":
-                        List<String> b = new ArrayList<>();
+                        boardCodes = new ArrayList<>();
                         reader.beginArray();
                         while (reader.hasNext()) {
-                            b.add(reader.nextString());
+                            boardCodes.add(reader.nextString());
                         }
                         reader.endArray();
-                        a.boards = b;
+                        break;
+                    case "search":
+                        search = true;
+                        reader.skipValue();
                         break;
                     default:
                         reader.skipValue();
@@ -94,26 +119,25 @@ public class ArchivesManager
                 }
             }
             reader.endObject();
-            archives.add(a);
+            Class archiveClass = jsonMapping.get(software);
+            if (archiveClass != null) {
+                archives.add((ExternalSiteArchive) archiveClass.getConstructor(String.class,
+                        String.class,
+                        List.class,
+                        boolean.class
+                )
+                        .newInstance(domain, name, boardCodes, search));
+            }
         }
         reader.endArray();
-
         return archives;
     }
 
     @Override
-    public void onArchivesReceived(List<Archives> archives) {
-        Logger.d(this, "Got archives");
-        archivesList = archives;
-    }
+    public void onJsonFailure(Exception e) {}
 
-    public boolean hasArchives() {
-        return !archivesList.isEmpty();
-    }
-
-    public static class Archives {
-        public String name = "";
-        public String domain = "";
-        public List<String> boards;
+    @Override
+    public void onJsonSuccess(List<ExternalSiteArchive> result) {
+        archivesList = result;
     }
 }

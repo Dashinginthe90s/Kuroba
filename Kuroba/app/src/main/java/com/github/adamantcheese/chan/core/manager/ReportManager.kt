@@ -3,13 +3,11 @@ package com.github.adamantcheese.chan.core.manager
 import android.annotation.SuppressLint
 import android.os.Build
 import com.github.adamantcheese.chan.BuildConfig
-import com.github.adamantcheese.chan.Chan.instance
-import com.github.adamantcheese.chan.core.base.ModularResult
 import com.github.adamantcheese.chan.core.di.NetModule.OkHttpClientWithUtils
+import com.github.adamantcheese.chan.core.manager.SettingsNotificationManager.SettingNotification
 import com.github.adamantcheese.chan.core.settings.ChanSettings
 import com.github.adamantcheese.chan.ui.controller.LogsController
 import com.github.adamantcheese.chan.ui.layout.crashlogs.CrashLog
-import com.github.adamantcheese.chan.ui.settings.SettingNotificationType
 import com.github.adamantcheese.chan.utils.BackgroundUtils
 import com.github.adamantcheese.chan.utils.Logger
 import com.github.adamantcheese.chan.utils.StringUtils.getCurrentDateAndTimeUTC
@@ -34,10 +32,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class ReportManager(
-        private val threadSaveManager: ThreadSaveManager,
-        private val settingsNotificationManager: SettingsNotificationManager,
         private val gson: Gson,
-        private val crashLogsDirPath: File
+        private val crashLogsDirPath: File,
+        private val client: OkHttpClientWithUtils
 ) {
     private val crashLogSenderQueue = PublishProcessor.create<ReportRequestWithFile>()
 
@@ -84,8 +81,8 @@ class ReportManager(
                 .debounce(1, TimeUnit.SECONDS)
                 .doOnNext {
                     // If no more crash logs left, remove the notification
-                    if (!hasCrashLogs()) {
-                        settingsNotificationManager.cancel(SettingNotificationType.CrashLog)
+                    if (countCrashLogs() <= 0) {
+                        SettingsNotificationManager.cancelNotification(SettingNotification.CrashLog)
                     }
                 }
                 .subscribe({
@@ -101,7 +98,7 @@ class ReportManager(
                 })
     }
 
-    private fun processSingleRequest(request: ReportRequest, crashLogFile: File): Single<ModularResult<Boolean>> {
+    private fun processSingleRequest(request: ReportRequest, crashLogFile: File): Single<Any> {
         BackgroundUtils.ensureBackgroundThread()
 
         // Delete old crash logs
@@ -110,26 +107,25 @@ class ReportManager(
                 Logger.e(TAG, "Couldn't delete crash log file: ${crashLogFile.absolutePath}")
             }
 
-            return Single.just(ModularResult.value(true))
+            return Single.just(Ok())
         }
 
         return sendInternal(request)
-                .onErrorReturn { error -> ModularResult.error(error) }
                 .doOnSuccess { result ->
-                    when (result) {
-                        is ModularResult.Value -> {
-                            Logger.d(TAG, "Crash log ${crashLogFile.absolutePath} sent")
+                    if (result is Ok) {
+                        Logger.d(TAG, "Crash log ${crashLogFile.absolutePath} sent!")
 
-                            if (!crashLogFile.delete()) {
-                                Logger.e(TAG, "Couldn't delete crash log file: ${crashLogFile.absolutePath}")
-                            }
+                        if (!crashLogFile.delete()) {
+                            Logger.e(TAG, "Couldn't delete crash log file: ${crashLogFile.absolutePath}")
                         }
-                        is ModularResult.Error -> {
-                            if (result.error is HttpCodeError) {
-                                Logger.e(TAG, "Bad response code: ${result.error.code}")
-                            } else {
-                                Logger.e(TAG, "Error while trying to send crash log", result.error)
-                            }
+                    }
+                }.doOnError { error ->
+                    when (error) {
+                        is HttpCodeError -> {
+                            Logger.e(TAG, "Bad response: ", error)
+                        }
+                        is Throwable -> {
+                            Logger.e(TAG, "Error while trying to send crash log", error)
                         }
                     }
                 }
@@ -140,8 +136,7 @@ class ReportManager(
             return
         }
 
-        val time = System.currentTimeMillis()
-        val newCrashLog = File(crashLogsDirPath, "${CRASH_LOG_FILE_NAME_PREFIX}_${time}.txt")
+        val newCrashLog = File(crashLogsDirPath, "${CRASH_LOG_FILE_NAME_PREFIX}_${System.currentTimeMillis()}.txt")
 
         if (newCrashLog.exists()) {
             return
@@ -160,17 +155,17 @@ class ReportManager(
             val resultString = buildString {
                 // To avoid log spam that may happen because of, let's say, server failure for
                 // couple of days, we want some kind of marker to be able to filter them
-                appendln("=== LOGS(${getCurrentDateAndTimeUTC()}) ===")
+                appendLine("=== LOGS(${getCurrentDateAndTimeUTC()}) ===")
                 logs?.let { append(it) }
                 append("\n\n")
 
                 if (!logsAlreadyContainCrash) {
-                    appendln("=== STACKTRACE ===")
+                    appendLine("=== STACKTRACE ===")
                     append(error)
                     append("\n\n")
                 }
 
-                appendln("=== SETTINGS ===")
+                appendLine("=== SETTINGS ===")
                 append(settings)
             }
 
@@ -181,15 +176,6 @@ class ReportManager(
         }
 
         Logger.d(TAG, "Stored new crash log, path = ${newCrashLog.absolutePath}")
-    }
-
-    fun hasCrashLogs(): Boolean {
-        if (!createCrashLogsDirIfNotExists()) {
-            return false
-        }
-
-        val crashLogs = crashLogsDirPath.listFiles()
-        return crashLogs != null && crashLogs.isNotEmpty()
     }
 
     fun countCrashLogs(): Int {
@@ -212,7 +198,7 @@ class ReportManager(
 
     fun deleteCrashLogs(crashLogs: List<CrashLog>) {
         if (!createCrashLogsDirIfNotExists()) {
-            settingsNotificationManager.cancel(SettingNotificationType.CrashLog)
+            SettingsNotificationManager.cancelNotification(SettingNotification.CrashLog)
             return
         }
 
@@ -220,24 +206,24 @@ class ReportManager(
 
         val remainingCrashLogs = crashLogsDirPath.listFiles()?.size ?: 0
         if (remainingCrashLogs == 0) {
-            settingsNotificationManager.cancel(SettingNotificationType.CrashLog)
+            SettingsNotificationManager.cancelNotification(SettingNotification.CrashLog)
             return
         }
 
         // There are still crash logs left, so show the notifications if they are not shown yet
-        settingsNotificationManager.notify(SettingNotificationType.CrashLog)
+        SettingsNotificationManager.postNotification(SettingNotification.CrashLog)
     }
 
     fun deleteAllCrashLogs() {
         if (!createCrashLogsDirIfNotExists()) {
-            settingsNotificationManager.cancel(SettingNotificationType.CrashLog)
+            SettingsNotificationManager.cancelNotification(SettingNotification.CrashLog)
             return
         }
 
         val potentialCrashLogs = crashLogsDirPath.listFiles()
         if (potentialCrashLogs.isNullOrEmpty()) {
             Logger.d(TAG, "No new crash logs")
-            settingsNotificationManager.cancel(SettingNotificationType.CrashLog)
+            SettingsNotificationManager.cancelNotification(SettingNotification.CrashLog)
             return
         }
 
@@ -246,12 +232,12 @@ class ReportManager(
 
         val remainingCrashLogs = crashLogsDirPath.listFiles()?.size ?: 0
         if (remainingCrashLogs == 0) {
-            settingsNotificationManager.cancel(SettingNotificationType.CrashLog)
+            SettingsNotificationManager.cancelNotification(SettingNotification.CrashLog)
             return
         }
 
         // There are still crash logs left, so show the notifications if they are not shown yet
-        settingsNotificationManager.notify(SettingNotificationType.CrashLog)
+        SettingsNotificationManager.postNotification(SettingNotification.CrashLog)
     }
 
     fun sendCrashLogs(crashLogs: List<CrashLog>): Completable {
@@ -275,7 +261,7 @@ class ReportManager(
                 .subscribeOn(senderScheduler)
     }
 
-    fun sendReport(title: String, description: String, logs: String?): Single<ModularResult<Boolean>> {
+    fun sendReport(title: String, description: String, logs: String?): Single<Any> {
         require(title.isNotEmpty()) { "title is empty" }
         require(description.isNotEmpty() || logs != null) { "description is empty" }
         require(title.length <= MAX_TITLE_LENGTH) { "title is too long ${title.length}" }
@@ -295,31 +281,16 @@ class ReportManager(
 
     private fun getSettingsStateString(): String {
         return buildString {
-            appendln("Prefetching enabled: ${ChanSettings.autoLoadThreadImages.get()}")
-            appendln("Thread downloading enabled: ${ChanSettings.incrementalThreadDownloadingEnabled.get()}, " +
-                    "active downloads = ${threadSaveManager.countActiveDownloads()}")
-            appendln("Youtube titles parsing enabled: ${ChanSettings.parseYoutubeTitles.get()}")
-            appendln("Youtube durations parsing enabled: ${ChanSettings.parseYoutubeDuration.get()}")
-            appendln("Concurrent file loading chunks count: ${ChanSettings.concurrentDownloadChunkCount.get().toInt()}")
-            appendln("WEBM streaming enabled: ${ChanSettings.videoStream.get()}")
-            appendln("Saved files base dir info: ${getFilesLocationInfo()}")
-            appendln("Local threads base dir info: ${getLocalThreadsLocationInfo()}")
-            appendln("Phone layout mode: ${ChanSettings.layoutMode.get().name}")
-            appendln("OkHttp IPv6 support enabled: ${ChanSettings.okHttpAllowIpv6.get()}")
-            appendln("OkHttp HTTP/2 support enabled: ${ChanSettings.okHttpAllowHttp2.get()}")
+            appendLine("Prefetching enabled: ${ChanSettings.autoLoadThreadImages.get()}")
+            appendLine("Media title parsing enabled: ${ChanSettings.parseMediaTitles.get()}")
+            appendLine("Youtube durations parsing enabled: ${ChanSettings.parseYoutubeDuration.get()}")
+            appendLine("Concurrent file loading chunks count: ${ChanSettings.concurrentDownloadChunkCount.get().toInt()}")
+            appendLine("WEBM streaming enabled: ${ChanSettings.videoStream.get()}")
+            appendLine("Saved files base dir info: ${getFilesLocationInfo()}")
+            appendLine("Phone layout mode: ${ChanSettings.layoutMode.get().name}")
+            appendLine("OkHttp IPv6 support enabled: ${ChanSettings.okHttpAllowIpv6.get()}")
+            appendLine("OkHttp HTTP/2 support enabled: ${ChanSettings.okHttpAllowHttp2.get()}")
         }
-    }
-
-    private fun getLocalThreadsLocationInfo(): String {
-        val localThreadsActiveDirType = when {
-            ChanSettings.localThreadLocation.isFileDirActive() -> "Java API"
-            ChanSettings.localThreadLocation.isSafDirActive() -> "SAF"
-            else -> "Neither of them is active, wtf?!"
-        }
-
-        return "Java API location: ${ChanSettings.localThreadLocation.fileApiBaseDir.get()}, " +
-                "SAF location: ${ChanSettings.localThreadLocation.safBaseDir.get()}, " +
-                "active: $localThreadsActiveDirType"
     }
 
     private fun getFilesLocationInfo(): String {
@@ -379,8 +350,8 @@ class ReportManager(
         return true
     }
 
-    private fun sendInternal(reportRequest: ReportRequest): Single<ModularResult<Boolean>> {
-        return Single.create<ModularResult<Boolean>> { emitter ->
+    private fun sendInternal(reportRequest: ReportRequest): Single<Any> {
+        return Single.create<Any> { emitter ->
             BackgroundUtils.ensureBackgroundThread()
 
             val json = try {
@@ -397,9 +368,9 @@ class ReportManager(
                     .post(requestBody)
                     .build()
 
-            instance(OkHttpClientWithUtils::class.java).proxiedClient.newCall(request).enqueue(object : Callback {
+            client.proxiedClient.newCall(request).enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    emitter.onSuccess(ModularResult.error(e))
+                    emitter.tryOnError(e)
                 }
 
                 override fun onResponse(call: Call, response: Response) {
@@ -407,17 +378,19 @@ class ReportManager(
                         val message = "Response is not successful, status = ${response.code}"
                         Logger.e(TAG, message)
 
-                        emitter.onSuccess(ModularResult.error(HttpCodeError(response.code)))
+                        emitter.tryOnError(HttpCodeError(response.code))
                         return
                     }
 
-                    emitter.onSuccess(ModularResult.value(true))
+                    emitter.onSuccess(Ok())
                 }
             })
         }.subscribeOn(senderScheduler)
     }
 
-    private class HttpCodeError(val code: Int) : Exception("Response is not successful, code = $code")
+    class HttpCodeError(code: Int) : Exception("Response is not successful, code = $code")
+
+    class Ok
 
     data class ReportRequestWithFile(
             val reportRequest: ReportRequest,

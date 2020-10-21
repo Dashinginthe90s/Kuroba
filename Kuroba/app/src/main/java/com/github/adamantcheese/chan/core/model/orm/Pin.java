@@ -19,11 +19,10 @@ package com.github.adamantcheese.chan.core.model.orm;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.github.adamantcheese.chan.core.database.HttpUrlType;
 import com.j256.ormlite.field.DatabaseField;
 import com.j256.ormlite.table.DatabaseTable;
 
-import okhttp3.HttpUrl;
+import java.util.Objects;
 
 @DatabaseTable(tableName = "pin")
 public class Pin
@@ -52,9 +51,6 @@ public class Pin
     @DatabaseField
     public boolean isError = false;
 
-    @DatabaseField(persisterClass = HttpUrlType.class)
-    public HttpUrl thumbnailUrl;
-
     @DatabaseField
     public int order = -1;
 
@@ -64,11 +60,8 @@ public class Pin
     //local field for keeping track of if the thread is a sticky; don't put this in the database
     public boolean isSticky = false;
 
-    /**
-     * Pins can now be used to either watch new posts or save new posts or do both
-     */
-    @DatabaseField(columnName = "pin_type")
-    public int pinType;
+    //local field for pin highlighting consistency; don't put this in the database
+    public boolean drawerHighlight = false;
 
     public Pin() {
     }
@@ -81,10 +74,8 @@ public class Pin
             int quoteLastCount,
             int quoteNewCount,
             boolean isError,
-            HttpUrl thumbnailUrl,
             int order,
-            boolean archived,
-            int pinType
+            boolean archived
     ) {
         this.loadable = loadable;
         this.watching = watching;
@@ -93,10 +84,8 @@ public class Pin
         this.quoteLastCount = quoteLastCount;
         this.quoteNewCount = quoteNewCount;
         this.isError = isError;
-        this.thumbnailUrl = thumbnailUrl;
         this.order = order;
         this.archived = archived;
-        this.pinType = pinType;
     }
 
     public int getNewPostCount() {
@@ -127,10 +116,8 @@ public class Pin
         copy.quoteLastCount = quoteLastCount;
         copy.quoteNewCount = quoteNewCount;
         copy.isError = isError;
-        copy.thumbnailUrl = thumbnailUrl;
         copy.order = order;
         copy.archived = archived;
-        copy.pinType = pinType;
         return copy;
     }
 
@@ -141,7 +128,7 @@ public class Pin
 
     @Override
     public int hashCode() {
-        return 31 * loadable.id + 31 * id;
+        return Objects.hash(loadable.id, id);
     }
 
     @Override
@@ -166,8 +153,7 @@ public class Pin
     @NonNull
     @Override
     public String toString() {
-        return "[id = " + id + ", pinType = " + pinType + ", isError = " + isError + ", isArchived = " + archived
-                + ", watching = " + watching + ", (active) = " + (!isError && !archived) + ", no = " + loadable.no
-                + "]";
+        return "[id = " + id + ", isError = " + isError + ", isArchived = " + archived + ", watching = " + watching
+                + ", (active) = " + (!isError && !archived) + ", no = " + loadable.no + "]";
     }
 }

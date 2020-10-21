@@ -28,7 +28,6 @@ import android.text.style.StyleSpan;
 import androidx.annotation.NonNull;
 import androidx.core.util.Pair;
 
-import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.core.di.NetModule;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.IOUtils;
@@ -68,14 +67,13 @@ public class CaptchaNoJsHtmlParser {
     private static final Pattern verificationTokenPattern = Pattern.compile(
             "<div class=\"fbc-verification-token\"><textarea dir=\"ltr\" readonly>(.*?)</textarea></div>");
     private static final String CHALLENGE_IMAGE_FILE_NAME = "challenge_image_file";
-    private static final int SUCCESS_STATUS_CODE = 200;
 
     private NetModule.OkHttpClientWithUtils okHttpClient;
     private Context context;
 
-    public CaptchaNoJsHtmlParser(Context context) {
+    public CaptchaNoJsHtmlParser(Context context, NetModule.OkHttpClientWithUtils okHttpClient) {
         this.context = context;
-        this.okHttpClient = Chan.instance(NetModule.OkHttpClientWithUtils.class);
+        this.okHttpClient = okHttpClient;
     }
 
     @NonNull
@@ -304,7 +302,7 @@ public class CaptchaNoJsHtmlParser {
         Request request = new Request.Builder().url(fullUrl).build();
 
         try (Response response = okHttpClient.getProxiedClient().newCall(request).execute()) {
-            if (response.code() != SUCCESS_STATUS_CODE) {
+            if (!response.isSuccessful()) {
                 throw new CaptchaNoJsV2ParsingError(
                         "Could not download challenge image, status code = " + response.code());
             }

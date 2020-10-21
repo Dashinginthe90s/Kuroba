@@ -19,20 +19,28 @@ package com.github.adamantcheese.chan.core.model.orm;
 import android.os.Parcel;
 import android.text.TextUtils;
 
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
+import androidx.annotation.NonNull;
+
+import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager;
+import com.github.adamantcheese.chan.core.database.HttpUrlType;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.site.Site;
+import com.github.adamantcheese.chan.core.site.http.Reply;
+import com.j256.ormlite.field.DataType;
 import com.j256.ormlite.field.DatabaseField;
 import com.j256.ormlite.table.DatabaseTable;
 
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.Locale;
+import java.util.Objects;
+
+import okhttp3.HttpUrl;
 
 import static com.github.adamantcheese.chan.Chan.instance;
-import static com.github.adamantcheese.chan.core.model.orm.Loadable.LoadableDownloadingState.AlreadyDownloaded;
-import static com.github.adamantcheese.chan.core.model.orm.Loadable.LoadableDownloadingState.DownloadingAndNotViewable;
-import static com.github.adamantcheese.chan.core.model.orm.Loadable.LoadableDownloadingState.DownloadingAndViewable;
+import static com.github.adamantcheese.chan.core.model.orm.Loadable.Mode.CATALOG;
+import static com.github.adamantcheese.chan.core.model.orm.Loadable.Mode.INVALID;
+import static com.github.adamantcheese.chan.core.model.orm.Loadable.Mode.THREAD;
 import static com.github.adamantcheese.chan.utils.StringUtils.maskPostNo;
 
 /**
@@ -59,7 +67,7 @@ public class Loadable
      * Mode for the loadable. Either thread or catalog.
      */
     @DatabaseField
-    public int mode = Mode.INVALID;
+    public int mode = INVALID;
 
     @DatabaseField(columnName = "board", canBeNull = false, index = true)
     public String boardCode = "";
@@ -87,27 +95,16 @@ public class Loadable
     @DatabaseField
     public int lastLoaded = -1;
 
-    @DatabaseField(canBeNull = false, format = "yyyy-MM-dd HH:mm:ss")
+    @DatabaseField(canBeNull = false, dataType = DataType.DATE_STRING, format = "yyyy-MM-dd HH:mm:ss")
     public Date lastLoadDate = GregorianCalendar.getInstance().getTime();
+
+    @DatabaseField(persisterClass = HttpUrlType.class)
+    public HttpUrl thumbnailUrl;
 
     public int markedNo = -1;
 
-    // when the title, listViewTop, listViewIndex or lastViewed were changed
-    public boolean dirty = false;
-
-    /**
-     * Tells us whether this loadable (when in THREAD mode) contains information about
-     * a live thread or the local saved copy of a thread (which may be already deleted from the server)
-     */
-    private transient LoadableDownloadingState loadableDownloadingState = LoadableDownloadingState.NotDownloading;
-
-    public synchronized void setLoadableState(LoadableDownloadingState state) {
-        this.loadableDownloadingState = state;
-    }
-
-    public synchronized LoadableDownloadingState getLoadableDownloadingState() {
-        return loadableDownloadingState;
-    }
+    // a reply draft that is specific to this loadable and is not stored in the database
+    public final Reply draft = new Reply();
 
     /**
      * Constructs an empty loadable. The mode is INVALID.
@@ -150,7 +147,7 @@ public class Loadable
         loadable.site = board.site;
         loadable.board = board;
         loadable.boardCode = board.code;
-        loadable.mode = Mode.CATALOG;
+        loadable.mode = CATALOG;
         return loadable;
     }
 
@@ -165,48 +162,13 @@ public class Loadable
         Loadable loadable = new Loadable();
         loadable.siteId = board.siteId;
         loadable.site = board.site;
-        loadable.mode = Mode.THREAD;
+        loadable.mode = THREAD;
         loadable.board = board;
         loadable.boardCode = board.code;
         loadable.no = no;
         loadable.title = title;
         if (!addToDatabase) return loadable;
-        return instance(DatabaseManager.class).getDatabaseLoadableManager().get(loadable);
-    }
-
-    public void setTitle(String title) {
-        if (!TextUtils.equals(this.title, title)) {
-            this.title = title;
-            dirty = true;
-        }
-    }
-
-    public void setLastViewed(int lastViewed) {
-        if (this.lastViewed != lastViewed) {
-            this.lastViewed = lastViewed;
-            dirty = true;
-        }
-    }
-
-    public void setLastLoaded(int lastLoaded) {
-        if (this.lastLoaded != lastLoaded) {
-            this.lastLoaded = lastLoaded;
-            dirty = true;
-        }
-    }
-
-    public void setListViewTop(int listViewTop) {
-        if (this.listViewTop != listViewTop) {
-            this.listViewTop = listViewTop;
-            dirty = true;
-        }
-    }
-
-    public void setListViewIndex(int listViewIndex) {
-        if (this.listViewIndex != listViewIndex) {
-            this.listViewIndex = listViewIndex;
-            dirty = true;
-        }
+        return instance(DatabaseLoadableManager.class).get(loadable);
     }
 
     /**
@@ -224,11 +186,11 @@ public class Loadable
 
         if (mode == other.mode) {
             switch (mode) {
-                case Mode.INVALID:
+                case INVALID:
                     return true;
-                case Mode.CATALOG:
+                case CATALOG:
                     return boardCode.equals(other.boardCode);
-                case Mode.THREAD:
+                case THREAD:
                     return boardCode.equals(other.boardCode) && no == other.no;
                 default:
                     throw new IllegalArgumentException();
@@ -238,55 +200,36 @@ public class Loadable
         }
     }
 
-    @Override
-    public int hashCode() {
-        int result = mode;
-
-        if (mode == Mode.THREAD || mode == Mode.CATALOG) {
-            result = 31 * result + boardCode.hashCode();
-        }
-        if (mode == Mode.THREAD) {
-            result = 31 * result + no;
-        }
-        return result;
+    public boolean databaseEquals(Loadable other) {
+        return this.id == other.id;
     }
 
     @Override
+    public int hashCode() {
+        return Objects.hash(mode, mode != INVALID ? boardCode : 0, mode == THREAD ? no : 0);
+    }
+
+    @Override
+    @NonNull
     public String toString() {
         return "Loadable{mode=" + mode + ", board='" + boardCode + '\'' + ", no=" + maskPostNo(no) + '\''
                 + ", listViewIndex=" + listViewIndex + ", listViewTop=" + listViewTop + ", lastViewed=" + maskPostNo(
-                lastViewed) + ", lastLoaded=" + maskPostNo(lastLoaded) + ", markedNo=" + maskPostNo(markedNo)
-                + ", dirty=" + dirty + ", loadableDownloadingState=" + loadableDownloadingState.name() + '}';
+                lastViewed) + ", lastLoaded=" + maskPostNo(lastLoaded) + ", markedNo=" + maskPostNo(markedNo) + '}';
     }
 
     public boolean isThreadMode() {
-        return mode == Mode.THREAD;
+        return mode == THREAD;
     }
 
     public boolean isCatalogMode() {
-        return mode == Mode.CATALOG;
+        return mode == CATALOG;
     }
 
     /**
-     * Thread is either fully downloaded or it is still being downloaded BUT we are currently
-     * viewing the local copy of the thread
+     * @return a string that really condenses the loadable contents for user-facing display
      */
-    public boolean isLocal() {
-        return loadableDownloadingState == DownloadingAndViewable || loadableDownloadingState == AlreadyDownloaded;
-    }
-
-    /**
-     * Thread is being downloaded but we are not currently viewing the local copy
-     */
-    public boolean isDownloading() {
-        return loadableDownloadingState == DownloadingAndNotViewable;
-    }
-
-    /**
-     * Extracts and converts to a string only the info that we are interested in from this loadable
-     */
-    public String toShortString() {
-        return String.format(Locale.ENGLISH, "[%s, %s, %s]", site.name(), boardCode, maskPostNo(no));
+    public String toShortestString() {
+        return TextUtils.isEmpty(title) ? String.format(Locale.ENGLISH, "/%s/%d", boardCode, no) : title;
     }
 
     public String desktopUrl() {
@@ -295,8 +238,6 @@ public class Loadable
 
     public static Loadable readFromParcel(Parcel parcel) {
         Loadable loadable = new Loadable();
-        /*loadable.id = */
-        parcel.readInt();
         loadable.siteId = parcel.readInt();
         loadable.mode = parcel.readInt();
         loadable.boardCode = parcel.readString();
@@ -304,11 +245,12 @@ public class Loadable
         loadable.title = parcel.readString();
         loadable.listViewIndex = parcel.readInt();
         loadable.listViewTop = parcel.readInt();
+        String s = parcel.readString();
+        loadable.thumbnailUrl = TextUtils.isEmpty(s) ? null : HttpUrl.get(s);
         return loadable;
     }
 
     public void writeToParcel(Parcel parcel) {
-        parcel.writeInt(id);
         // TODO(multi-site)
         parcel.writeInt(siteId);
         parcel.writeInt(mode);
@@ -318,6 +260,7 @@ public class Loadable
         parcel.writeString(title);
         parcel.writeInt(listViewIndex);
         parcel.writeInt(listViewTop);
+        parcel.writeString(thumbnailUrl == null ? "" : thumbnailUrl.toString());
     }
 
     @SuppressWarnings("MethodDoesntCallSuperMethod")
@@ -343,29 +286,5 @@ public class Loadable
         public static final int INVALID = -1;
         public static final int THREAD = 0;
         public static final int CATALOG = 1;
-    }
-
-    /**
-     * Only for Loadable.Mode == THREAD
-     */
-    public enum LoadableDownloadingState {
-        /**
-         * We are not downloading a thread associated with this loadable
-         */
-        NotDownloading,
-        /**
-         * We are downloading this thread, but we are not viewing it at the current time.
-         * (We are viewing the live thread)
-         */
-        DownloadingAndNotViewable,
-        /**
-         * We are downloading this thread and we are currently viewing it (We are viewing the local
-         * thread)
-         */
-        DownloadingAndViewable,
-        /**
-         * Thread has been fully downloaded so it's always a local thread
-         */
-        AlreadyDownloaded,
     }
 }

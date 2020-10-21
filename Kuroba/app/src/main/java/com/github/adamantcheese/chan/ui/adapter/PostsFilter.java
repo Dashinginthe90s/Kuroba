@@ -18,7 +18,7 @@ package com.github.adamantcheese.chan.ui.adapter;
 
 import android.text.TextUtils;
 
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
+import com.github.adamantcheese.chan.core.database.DatabaseHideManager;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostImage;
 
@@ -28,10 +28,6 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
-
-import javax.inject.Inject;
-
-import static com.github.adamantcheese.chan.Chan.inject;
 
 public class PostsFilter {
     private static final Comparator<Post> IMAGE_COMPARATOR = (lhs, rhs) -> rhs.getImagesCount() - lhs.getImagesCount();
@@ -46,7 +42,7 @@ public class PostsFilter {
             (lhs, rhs) -> (int) (rhs.getLastModified() - lhs.getLastModified());
 
     private static final Comparator<Post> THREAD_ACTIVITY_COMPARATOR = (lhs, rhs) -> {
-        long currentTimeSeconds = System.currentTimeMillis() / 1000;
+        long currentTimeSeconds = System.currentTimeMillis() / 1000L;
 
         //we can't divide by zero, but we can divide by the smallest thing that's closest to 0 instead
         long score1 = (long) ((currentTimeSeconds - lhs.time) / (lhs.getReplies() != 0
@@ -59,16 +55,14 @@ public class PostsFilter {
         return Long.compare(score1, score2);
     };
 
-    @Inject
-    DatabaseManager databaseManager;
-
     private Order order;
     private String query;
+    private DatabaseHideManager databaseHideManager;
 
-    public PostsFilter(Order order, String query) {
+    public PostsFilter(Order order, String query, DatabaseHideManager databaseHideManager) {
         this.order = order;
         this.query = query;
-        inject(this);
+        this.databaseHideManager = databaseHideManager;
     }
 
     /**
@@ -135,7 +129,7 @@ public class PostsFilter {
         }
 
         // Process hidden by filter and post/thread hiding
-        return databaseManager.getDatabaseHideManager().filterHiddenPosts(posts, siteId, board);
+        return databaseHideManager.filterHiddenPosts(posts, siteId, board);
     }
 
     public enum Order {

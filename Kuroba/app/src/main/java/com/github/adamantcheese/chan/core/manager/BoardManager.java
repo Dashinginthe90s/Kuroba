@@ -21,8 +21,6 @@ import com.github.adamantcheese.chan.core.repository.BoardRepository;
 import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.core.site.common.CommonDataStructs.Boards;
 
-import javax.inject.Inject;
-
 /**
  * <p>Keeps track of {@link Board}s in the system.
  * <p>There are a few types of sites, those who provide a list of all boards known,
@@ -38,7 +36,6 @@ import javax.inject.Inject;
 public class BoardManager {
     private final BoardRepository boardRepository;
 
-    @Inject
     public BoardManager(BoardRepository boardRepository) {
         this.boardRepository = boardRepository;
     }

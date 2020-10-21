@@ -43,7 +43,7 @@ import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 public class ThreadSlideController
         extends Controller
         implements DoubleNavigationController, SlidingPaneLayout.PanelSlideListener,
-                   ToolbarNavigationController.ToolbarSearchCallback {
+        ToolbarNavigationController.ToolbarSearchCallback {
     public Controller leftController;
     public Controller rightController;
 
@@ -79,7 +79,8 @@ public class ThreadSlideController
                 overhang.setAccessible(true);
                 overhang.set(slidingPaneLayout, 0);
                 overhang.setAccessible(false);
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
             // In order to "snap", no parallax and no dimming, and remove the shadow because you can't drag anyways
             slidingPaneLayout.setParallaxDistance(0);
             slidingPaneLayout.setShadowDrawableLeft(null);
@@ -245,6 +246,11 @@ public class ThreadSlideController
     @Override
     public boolean popController(ControllerTransition controllerTransition) {
         return navigationController.popController(controllerTransition);
+    }
+
+    @Override
+    public boolean isViewingCatalog() {
+        return leftOpen(); // catalog is on the left pane
     }
 
     @Override

@@ -56,14 +56,11 @@ import okhttp3.HttpUrl;
 import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.core.model.PostImage.Type.GIF;
 import static com.github.adamantcheese.chan.core.model.PostImage.Type.MOVIE;
-import static com.github.adamantcheese.chan.core.model.PostImage.Type.PDF;
 import static com.github.adamantcheese.chan.core.model.PostImage.Type.STATIC;
-import static com.github.adamantcheese.chan.core.model.PostImage.Type.SWF;
 import static com.github.adamantcheese.chan.core.settings.ChanSettings.MediaAutoLoadMode.shouldLoadForNetworkType;
 import static com.github.adamantcheese.chan.ui.view.MultiImageView.Mode.BIGIMAGE;
 import static com.github.adamantcheese.chan.ui.view.MultiImageView.Mode.GIFIMAGE;
 import static com.github.adamantcheese.chan.ui.view.MultiImageView.Mode.LOWRES;
-import static com.github.adamantcheese.chan.ui.view.MultiImageView.Mode.OTHER;
 import static com.github.adamantcheese.chan.ui.view.MultiImageView.Mode.VIDEO;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAudioManager;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
@@ -289,15 +286,15 @@ public class ImageViewerPresenter
     private void onLowResInCenter() {
         PostImage postImage = images.get(selectedPosition);
 
-        if (imageAutoLoad(loadable, postImage) && (!postImage.spoiler() || ChanSettings.revealimageSpoilers.get())) {
+        if (imageAutoLoad(postImage) && (!postImage.spoiler() || ChanSettings.revealimageSpoilers.get())) {
             if (postImage.type == STATIC) {
                 callback.setImageMode(postImage, BIGIMAGE, true);
             } else if (postImage.type == GIF) {
                 callback.setImageMode(postImage, GIFIMAGE, true);
-            } else if (postImage.type == MOVIE && videoAutoLoad(loadable, postImage)) {
+            } else if (postImage.type == MOVIE && videoAutoLoad(postImage)) {
                 callback.setImageMode(postImage, VIDEO, true);
-            } else if (postImage.type == PDF || postImage.type == SWF) {
-                callback.setImageMode(postImage, OTHER, true);
+            } else if (postImage.type == PostImage.Type.OTHER) {
+                callback.setImageMode(postImage, MultiImageView.Mode.OTHER, true);
             }
         }
 
@@ -370,9 +367,9 @@ public class ImageViewerPresenter
         boolean loadChunked = true;
 
         if (postImage.type == STATIC || postImage.type == GIF) {
-            load = imageAutoLoad(loadable, postImage);
+            load = imageAutoLoad(postImage);
         } else if (postImage.type == MOVIE) {
-            load = videoAutoLoad(loadable, postImage);
+            load = videoAutoLoad(postImage);
         }
 
         /*
@@ -404,14 +401,10 @@ public class ImageViewerPresenter
             if (loadChunked) {
                 DownloadRequestExtraInfo extraInfo = new DownloadRequestExtraInfo(postImage.size, postImage.fileHash);
 
-                preloadDownload[0] = fileCacheV2.enqueueChunkedDownloadFileRequest(loadable,
-                        postImage,
-                        extraInfo,
-                        fileCacheListener
-                );
-            } else {
                 preloadDownload[0] =
-                        fileCacheV2.enqueueNormalDownloadFileRequest(loadable, postImage, fileCacheListener);
+                        fileCacheV2.enqueueChunkedDownloadFileRequest(postImage, extraInfo, fileCacheListener);
+            } else {
+                preloadDownload[0] = fileCacheV2.enqueueNormalDownloadFileRequest(postImage, fileCacheListener);
             }
 
             if (preloadDownload[0] != null) {
@@ -463,7 +456,7 @@ public class ImageViewerPresenter
         // Don't mistake a swipe when the pager is disabled as a tap
         if (viewPagerVisible) {
             PostImage postImage = images.get(selectedPosition);
-            if (imageAutoLoad(loadable, postImage) && !postImage.spoiler()) {
+            if (imageAutoLoad(postImage) && !postImage.spoiler()) {
                 if (postImage.type == MOVIE && callback.getImageMode(postImage) != VIDEO) {
                     callback.setImageMode(postImage, VIDEO, true);
                 } else {
@@ -481,8 +474,8 @@ public class ImageViewerPresenter
                     callback.setImageMode(postImage, GIFIMAGE, true);
                 } else if (postImage.type == MOVIE && currentMode != VIDEO) {
                     callback.setImageMode(postImage, VIDEO, true);
-                } else if ((postImage.type == PDF || postImage.type == SWF) && currentMode != OTHER) {
-                    callback.setImageMode(postImage, OTHER, true);
+                } else if ((postImage.type == PostImage.Type.OTHER) && currentMode != MultiImageView.Mode.OTHER) {
+                    callback.setImageMode(postImage, MultiImageView.Mode.OTHER, true);
                 } else {
                     if (callback.isImmersive()) {
                         callback.showSystemUI(true);
@@ -588,24 +581,14 @@ public class ImageViewerPresenter
         }
     }
 
-    private boolean imageAutoLoad(Loadable loadable, PostImage postImage) {
-        if (loadable.isLocal()) {
-            // All images are stored locally when isSavedCopy is true
-            return true;
-        }
-
+    private boolean imageAutoLoad(PostImage postImage) {
         // Auto load the image when it is cached
         return cacheHandler.exists(postImage.imageUrl)
                 || shouldLoadForNetworkType(ChanSettings.imageAutoLoadNetwork.get());
     }
 
-    private boolean videoAutoLoad(Loadable loadable, PostImage postImage) {
-        if (loadable.isLocal()) {
-            // All videos are stored locally when isSavedCopy is true
-            return true;
-        }
-
-        return imageAutoLoad(loadable, postImage) && shouldLoadForNetworkType(ChanSettings.videoAutoLoadNetwork.get());
+    private boolean videoAutoLoad(PostImage postImage) {
+        return imageAutoLoad(postImage) && shouldLoadForNetworkType(ChanSettings.videoAutoLoadNetwork.get());
     }
 
     private void setTitle(PostImage postImage, int position) {
@@ -655,7 +638,7 @@ public class ImageViewerPresenter
             @Override
             public void onFloatingMenuItemClicked(FloatingMenu<Integer> menu, FloatingMenuItem<Integer> item) {
                 for (ImageSearch imageSearch : ImageSearch.engines) {
-                    if (((Integer) item.getId()) == imageSearch.getId()) {
+                    if (item.getId() == imageSearch.getId()) {
                         final HttpUrl searchImageUrl = getSearchImageUrl(getCurrentPostImage());
                         if (searchImageUrl == null) {
                             Logger.e(this, "onFloatingMenuItemClicked() searchImageUrl == null");

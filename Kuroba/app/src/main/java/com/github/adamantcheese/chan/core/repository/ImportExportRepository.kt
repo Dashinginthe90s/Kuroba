@@ -19,9 +19,8 @@ package com.github.adamantcheese.chan.core.repository
 import android.annotation.SuppressLint
 import android.text.TextUtils
 import com.github.adamantcheese.chan.core.database.DatabaseHelper
-import com.github.adamantcheese.chan.core.database.DatabaseManager
+import com.github.adamantcheese.chan.core.database.DatabaseUtils
 import com.github.adamantcheese.chan.core.model.export.*
-import com.github.adamantcheese.chan.core.model.json.site.SiteConfig
 import com.github.adamantcheese.chan.core.model.orm.*
 import com.github.adamantcheese.chan.core.repository.ImportExportRepository.ImportExport.Export
 import com.github.adamantcheese.chan.core.repository.ImportExportRepository.ImportExport.Import
@@ -33,24 +32,22 @@ import com.github.k1rakishou.fsaf.file.AbstractFile
 import com.github.k1rakishou.fsaf.file.ExternalFile
 import com.github.k1rakishou.fsaf.file.FileDescriptorMode
 import com.google.gson.Gson
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.io.FileReader
 import java.io.FileWriter
 import java.io.IOException
 import java.sql.SQLException
 import java.util.*
-import javax.inject.Inject
+import java.util.regex.Pattern
 
-class ImportExportRepository @Inject
+class ImportExportRepository
 constructor(
-        private val databaseManager: DatabaseManager,
         private val databaseHelper: DatabaseHelper,
         private val gson: Gson,
         private val fileManager: FileManager
 ) {
 
     fun exportTo(settingsFile: ExternalFile, isNewFile: Boolean, callbacks: ImportExportCallbacks) {
-        databaseManager.runTask {
+        DatabaseUtils.runTask {
             try {
                 val appSettings = readSettingsFromDatabase()
                 if (appSettings.isEmpty) {
@@ -95,7 +92,7 @@ constructor(
     }
 
     fun importFrom(settingsFile: ExternalFile, callbacks: ImportExportCallbacks) {
-        databaseManager.runTask {
+        DatabaseUtils.runTask {
             try {
                 if (!fileManager.exists(settingsFile)) {
                     Logger.e(TAG, "There is nothing to import, importFile does not exist "
@@ -165,8 +162,7 @@ constructor(
         }
 
         for (exportedBoard in appSettings.exportedBoards) {
-            assert(exportedBoard.description != null)
-            databaseHelper.boardsDao.createIfNotExists(Board(
+            databaseHelper.boardDao.createIfNotExists(Board(
                     exportedBoard.siteId,
                     exportedBoard.isSaved,
                     exportedBoard.order,
@@ -196,14 +192,13 @@ constructor(
         }
 
         for (exportedSite in appSettings.exportedSites) {
-            val inserted = databaseHelper.siteDao.createIfNotExists(SiteModel(
+            val inserted = databaseHelper.siteModelDao.createIfNotExists(SiteModel(
                     exportedSite.siteId,
                     exportedSite.configuration,
                     exportedSite.userSettings,
-                    exportedSite.order
+                    exportedSite.order,
+                    exportedSite.classId
             ))
-
-            val exportedSavedThreads = appSettings.exportedSavedThreads
 
             for (exportedPin in exportedSite.exportedPins) {
                 val exportedLoadable = exportedPin.exportedLoadable ?: continue
@@ -221,32 +216,6 @@ constructor(
                 )
 
                 val insertedLoadable = databaseHelper.loadableDao.createIfNotExists(loadable)
-                val exportedSavedThread = findSavedThreadByOldLoadableId(
-                        exportedSavedThreads,
-                        exportedLoadable.loadableId.toInt())
-
-                // ExportedSavedThreads may have their loadable ids noncontiguous. Like 1,3,4,5,21,152.
-                // SQLite does not like it and will be returning to us contiguous ids ignoring our ids.
-                // This will create a situation where savedThread.loadableId may not have a loadable.
-                // So we need to fix this by finding a saved thread by old loadable id and updating
-                // it's loadable id with the newly inserted id.
-                if (exportedSavedThread != null) {
-                    exportedSavedThread.loadableId = insertedLoadable.id
-
-                    databaseHelper.savedThreadDao.createIfNotExists(SavedThread(
-                            exportedSavedThread.isFullyDownloaded,
-                            exportedSavedThread.isStopped,
-                            exportedSavedThread.lastSavedPostNo,
-                            exportedSavedThread.loadableId
-                    ))
-                }
-
-                val thumbnailUrl = try {
-                    exportedPin.thumbnailUrl.toHttpUrl()
-                } catch (e: Exception) {
-                    null
-                }
-
                 val pin = Pin(
                         insertedLoadable,
                         exportedPin.isWatching,
@@ -255,10 +224,8 @@ constructor(
                         exportedPin.quoteLastCount,
                         exportedPin.quoteNewCount,
                         exportedPin.isError,
-                        thumbnailUrl,
                         exportedPin.order,
-                        exportedPin.isArchived,
-                        exportedPin.pinType
+                        exportedPin.isArchived
                 )
                 databaseHelper.pinDao.createIfNotExists(pin)
             }
@@ -290,18 +257,6 @@ constructor(
         ChanSettings.deserializeFromString(appSettingsParam.settings)
     }
 
-    private fun findSavedThreadByOldLoadableId(
-            exportedSavedThreads: List<ExportedSavedThread>,
-            oldLoadableId: Int): ExportedSavedThread? {
-        for (exportedSavedThread in exportedSavedThreads) {
-            if (exportedSavedThread.loadableId == oldLoadableId) {
-                return exportedSavedThread
-            }
-        }
-
-        return null
-    }
-
     private fun onUpgrade(version: Int, appSettings: ExportedAppSettings): ExportedAppSettings {
         if (version < 2) {
             //clear the post hides for version 1, threadNo field was added
@@ -316,20 +271,26 @@ constructor(
             }
         }
 
+        //can't directly use gson here, gotta use regex instead
+        //I don't know why, but for some reason Android fails to compile this without the redundant escape??
+        @Suppress("RegExpRedundantEscape") val oldConfigPattern = Pattern.compile("\\{\"internal_site_id\":(\\d+),\"external\":.+\\}")
+
         if (version < 4) {
             //55chan and 8chan were removed for this version
             var chan8: ExportedSite? = null
             var chan55: ExportedSite? = null
 
             for (site in appSettings.exportedSites) {
-                val config = gson.fromJson(site.configuration, SiteConfig::class.java)
+                val matcher = oldConfigPattern.matcher(site.configuration.toString())
+                if (matcher.matches()) {
+                    val classID = matcher.group(1)?.let { Integer.parseInt(it) }
+                    if (classID == 1 && chan8 == null) {
+                        chan8 = site
+                    }
 
-                if (config.classId == 1 && chan8 == null) {
-                    chan8 = site
-                }
-
-                if (config.classId == 7 && chan55 == null) {
-                    chan55 = site
+                    if (classID == 7 && chan55 == null) {
+                        chan55 = site
+                    }
                 }
             }
 
@@ -342,6 +303,18 @@ constructor(
             }
         }
 
+        if (version < 5) {
+            // siteconfig class removed, move stuff over
+            for (site in appSettings.exportedSites) {
+                val matcher = oldConfigPattern.matcher(site.configuration.toString())
+                if (matcher.matches()) {
+                    val classID = matcher.group(1)?.let { Integer.parseInt(it) }
+                    if (classID != null) {
+                        site.classId = classID
+                    }
+                }
+            }
+        }
         return appSettings
     }
 
@@ -379,21 +352,9 @@ constructor(
                     loadable.mode,
                     loadable.no,
                     loadable.siteId,
-                    loadable.title
+                    loadable.title,
+                    loadable.thumbnailUrl?.toString()
             )
-
-            // When exporting a localThreadLocation that points to a directory located at places like
-            // sd-card we want to export pins without "download thread" flag because when
-            // importing settings back after app uninstall or when importing the on another
-            // phone all of the SAF base directories will become unavailable due to how SAF works.
-            // So the user will have to choose the base directories again and then resume threads
-            // downloading manually. We also need to set the "isStopped" flag to true for
-            // ExportedSavedThread.
-            val pinType = if (ChanSettings.localThreadLocation.isSafDirActive()) {
-                PinType.removeDownloadNewPostsFlag(pin.pinType)
-            } else {
-                pin.pinType
-            }
 
             val exportedPin = ExportedPin(
                     pin.archived,
@@ -403,12 +364,10 @@ constructor(
                     pin.order,
                     pin.quoteLastCount,
                     pin.quoteNewCount,
-                    pin.thumbnailUrl?.toString(),
                     pin.watchLastCount,
                     pin.watchNewCount,
                     pin.watching,
-                    exportedLoadable,
-                    pinType
+                    exportedLoadable
             )
 
             toExportMap[siteModel]!!.add(exportedPin)
@@ -422,6 +381,7 @@ constructor(
                     key.configuration,
                     key.order,
                     key.userSettings,
+                    key.classID,
                     value
             )
 
@@ -430,7 +390,7 @@ constructor(
 
         val exportedBoards = ArrayList<ExportedBoard>()
 
-        for (board in databaseHelper.boardsDao.queryForAll()) {
+        for (board in databaseHelper.boardDao.queryForAll()) {
             exportedBoards.add(ExportedBoard(
                     board.siteId,
                     board.saved,
@@ -492,25 +452,6 @@ constructor(
             ))
         }
 
-        val exportedSavedThreads = ArrayList<ExportedSavedThread>()
-
-        for (savedThread in databaseHelper.savedThreadDao.queryForAll()) {
-            // Set the isStopped flag to true for ExportedSavedThread when localThreadLocation
-            // points to a directory that uses SAF
-            val isDownloadingStopped = if (ChanSettings.localThreadLocation.isSafDirActive()) {
-                true
-            } else {
-                savedThread.isStopped
-            }
-
-            exportedSavedThreads.add(ExportedSavedThread(
-                    savedThread.loadableId,
-                    savedThread.lastSavedPostNo,
-                    savedThread.isFullyDownloaded,
-                    isDownloadingStopped
-            ))
-        }
-
         val settings = ChanSettings.serializeToString()
 
         return ExportedAppSettings(
@@ -518,7 +459,6 @@ constructor(
                 exportedBoards,
                 exportedFilters,
                 exportedPostHides,
-                exportedSavedThreads,
                 settings
         )
     }
@@ -536,7 +476,7 @@ constructor(
 
     private fun fillSitesMap(): Map<Int, SiteModel> {
         val map = hashMapOf<Int, SiteModel>()
-        val sites = databaseHelper.siteDao.queryForAll()
+        val sites = databaseHelper.siteModelDao.queryForAll()
 
         for (site in sites) {
             map[site.id] = site
@@ -586,19 +526,6 @@ constructor(
             if (loadable.siteId == site.siteId) {
                 loadables.add(loadable)
             }
-        }
-
-        if (loadables.isNotEmpty()) {
-            val savedThreadToDelete = ArrayList<ExportedSavedThread>()
-            for (loadable in loadables) {
-                //saved threads
-                for (savedThread in appSettings.exportedSavedThreads) {
-                    if (loadable.loadableId == savedThread.getLoadableId().toLong()) {
-                        savedThreadToDelete.add(savedThread)
-                    }
-                }
-            }
-            appSettings.exportedSavedThreads.removeAll(savedThreadToDelete)
         }
 
         //post hides

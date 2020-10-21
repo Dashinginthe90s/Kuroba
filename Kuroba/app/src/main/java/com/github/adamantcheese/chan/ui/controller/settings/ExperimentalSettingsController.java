@@ -1,12 +1,12 @@
 package com.github.adamantcheese.chan.ui.controller.settings;
 
-import androidx.appcompat.app.AlertDialog;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.os.Build;
 import android.widget.ArrayAdapter;
 
 import androidx.annotation.RequiresApi;
+import androidx.appcompat.app.AlertDialog;
 
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
@@ -30,7 +30,6 @@ import java.util.List;
 
 import javax.inject.Inject;
 
-import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getScreenOrientation;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.isAndroid10;
@@ -83,8 +82,6 @@ public class ExperimentalSettingsController
             resetExclusionZonesSetting.setEnabled(false);
             gestureExclusionZonesSetting.setEnabled(false);
         }
-
-        inject(this);
     }
 
     @Override

@@ -18,11 +18,12 @@ package com.github.adamantcheese.chan.ui.controller;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import androidx.appcompat.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.os.Environment;
 import android.view.View;
+
+import androidx.appcompat.app.AlertDialog;
 
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
@@ -49,16 +50,14 @@ public class SaveLocationController
     private FloatingActionButton addButton;
     private RuntimePermissionsHelper runtimePermissionsHelper;
     private FileWatcher fileWatcher;
-    private SaveLocationControllerMode mode;
     private SaveLocationControllerCallback callback;
 
     public SaveLocationController(
-            Context context, SaveLocationControllerMode mode, SaveLocationControllerCallback callback
+            Context context, SaveLocationControllerCallback callback
     ) {
         super(context);
 
         this.callback = callback;
-        this.mode = mode;
     }
 
     @Override
@@ -169,22 +168,12 @@ public class SaveLocationController
     }
 
     private File getInitialLocation() {
-        if (mode == SaveLocationControllerMode.ImageSaveLocation) {
-            if (ChanSettings.saveLocation.isFileDirActive()) {
-                if (ChanSettings.saveLocation.getFileApiBaseDir().get().isEmpty()) {
-                    return getExternalStorageDir();
-                }
-
-                return new File(ChanSettings.saveLocation.getFileApiBaseDir().get());
+        if (ChanSettings.saveLocation.isFileDirActive()) {
+            if (ChanSettings.saveLocation.getFileApiBaseDir().get().isEmpty()) {
+                return getExternalStorageDir();
             }
-        } else {
-            if (ChanSettings.localThreadLocation.isFileDirActive()) {
-                if (ChanSettings.localThreadLocation.getFileApiBaseDir().get().isEmpty()) {
-                    return getExternalStorageDir();
-                }
 
-                return new File(ChanSettings.localThreadLocation.getFileApiBaseDir().get());
-            }
+            return new File(ChanSettings.saveLocation.getFileApiBaseDir().get());
         }
 
         return getExternalStorageDir();
@@ -202,10 +191,5 @@ public class SaveLocationController
 
     public interface SaveLocationControllerCallback {
         void onDirectorySelected(String dirPath);
-    }
-
-    public enum SaveLocationControllerMode {
-        ImageSaveLocation,
-        LocalThreadsSaveLocation
     }
 }

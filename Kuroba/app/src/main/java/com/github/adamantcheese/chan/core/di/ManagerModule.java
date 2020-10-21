@@ -16,22 +16,18 @@
  */
 package com.github.adamantcheese.chan.core.di;
 
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
+import com.github.adamantcheese.chan.core.database.DatabaseFilterManager;
+import com.github.adamantcheese.chan.core.database.DatabasePinManager;
+import com.github.adamantcheese.chan.core.di.NetModule.OkHttpClientWithUtils;
 import com.github.adamantcheese.chan.core.manager.ArchivesManager;
 import com.github.adamantcheese.chan.core.manager.BoardManager;
 import com.github.adamantcheese.chan.core.manager.ChanLoaderManager;
 import com.github.adamantcheese.chan.core.manager.FilterEngine;
 import com.github.adamantcheese.chan.core.manager.FilterWatchManager;
-import com.github.adamantcheese.chan.core.manager.PageRequestManager;
 import com.github.adamantcheese.chan.core.manager.ReportManager;
-import com.github.adamantcheese.chan.core.manager.SavedThreadLoaderManager;
-import com.github.adamantcheese.chan.core.manager.SettingsNotificationManager;
-import com.github.adamantcheese.chan.core.manager.ThreadSaveManager;
 import com.github.adamantcheese.chan.core.manager.WakeManager;
 import com.github.adamantcheese.chan.core.manager.WatchManager;
 import com.github.adamantcheese.chan.core.repository.BoardRepository;
-import com.github.adamantcheese.chan.core.repository.SavedThreadLoaderRepository;
-import com.github.adamantcheese.chan.core.site.parser.MockReplyManager;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.k1rakishou.fsaf.FileManager;
 import com.google.gson.Gson;
@@ -41,8 +37,6 @@ import org.codejargon.feather.Provides;
 import java.io.File;
 
 import javax.inject.Singleton;
-
-import okhttp3.OkHttpClient;
 
 import static com.github.adamantcheese.chan.core.di.AppModule.getCacheDir;
 
@@ -58,9 +52,9 @@ public class ManagerModule {
 
     @Provides
     @Singleton
-    public FilterEngine provideFilterEngine(DatabaseManager databaseManager) {
+    public FilterEngine provideFilterEngine(DatabaseFilterManager databaseFilterManager) {
         Logger.d(AppModule.DI_TAG, "Filter engine");
-        return new FilterEngine(databaseManager);
+        return new FilterEngine(databaseFilterManager);
     }
 
     @Provides
@@ -73,21 +67,13 @@ public class ManagerModule {
     @Provides
     @Singleton
     public WatchManager provideWatchManager(
-            DatabaseManager databaseManager,
+            DatabasePinManager databasePinManager,
             ChanLoaderManager chanLoaderManager,
             WakeManager wakeManager,
-            PageRequestManager pageRequestManager,
-            ThreadSaveManager threadSaveManager,
             FileManager fileManager
     ) {
         Logger.d(AppModule.DI_TAG, "Watch manager");
-        return new WatchManager(databaseManager,
-                chanLoaderManager,
-                wakeManager,
-                pageRequestManager,
-                threadSaveManager,
-                fileManager
-        );
+        return new WatchManager(databasePinManager, chanLoaderManager, wakeManager);
     }
 
     @Provides
@@ -119,13 +105,6 @@ public class ManagerModule {
 
     @Provides
     @Singleton
-    public PageRequestManager providePageRequestManager() {
-        Logger.d(AppModule.DI_TAG, "Page request manager");
-        return new PageRequestManager();
-    }
-
-    @Provides
-    @Singleton
     public ArchivesManager provideArchivesManager() {
         Logger.d(AppModule.DI_TAG, "Archives manager (4chan only)");
         return new ArchivesManager();
@@ -133,50 +112,10 @@ public class ManagerModule {
 
     @Provides
     @Singleton
-    public ThreadSaveManager provideSaveThreadManager(
-            DatabaseManager databaseManager,
-            OkHttpClient okHttpClient,
-            SavedThreadLoaderRepository savedThreadLoaderRepository,
-            FileManager fileManager
-    ) {
-        Logger.d(AppModule.DI_TAG, "Thread save manager");
-        return new ThreadSaveManager(databaseManager, okHttpClient, savedThreadLoaderRepository, fileManager);
-    }
-
-    @Provides
-    @Singleton
-    public SavedThreadLoaderManager provideSavedThreadLoaderManager(
-            SavedThreadLoaderRepository savedThreadLoaderRepository, FileManager fileManager
-    ) {
-        Logger.d(AppModule.DI_TAG, "Saved thread loader manager");
-        return new SavedThreadLoaderManager(savedThreadLoaderRepository, fileManager);
-    }
-
-    @Provides
-    @Singleton
-    public MockReplyManager provideMockReplyManager() {
-        Logger.d(AppModule.DI_TAG, "Mock reply manager");
-        return new MockReplyManager();
-    }
-
-    @Provides
-    @Singleton
-    public ReportManager provideReportManager(
-            Gson gson, ThreadSaveManager threadSaveManager, SettingsNotificationManager settingsNotificationManager
-    ) {
+    public ReportManager provideReportManager(Gson gson, OkHttpClientWithUtils clientWithUtils) {
         Logger.d(AppModule.DI_TAG, "Report manager");
         File cacheDir = getCacheDir();
 
-        return new ReportManager(threadSaveManager,
-                settingsNotificationManager,
-                gson,
-                new File(cacheDir, CRASH_LOGS_DIR_NAME)
-        );
-    }
-
-    @Provides
-    @Singleton
-    public SettingsNotificationManager provideSettingsNotificationManager() {
-        return new SettingsNotificationManager();
+        return new ReportManager(gson, new File(cacheDir, CRASH_LOGS_DIR_NAME), clientWithUtils);
     }
 }

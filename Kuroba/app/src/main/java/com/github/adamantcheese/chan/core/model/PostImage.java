@@ -29,17 +29,15 @@ import okhttp3.HttpUrl;
 
 import static com.github.adamantcheese.chan.core.model.PostImage.Type.GIF;
 import static com.github.adamantcheese.chan.core.model.PostImage.Type.MOVIE;
-import static com.github.adamantcheese.chan.core.model.PostImage.Type.PDF;
+import static com.github.adamantcheese.chan.core.model.PostImage.Type.OTHER;
 import static com.github.adamantcheese.chan.core.model.PostImage.Type.STATIC;
-import static com.github.adamantcheese.chan.core.model.PostImage.Type.SWF;
 
 public class PostImage {
     public enum Type {
         STATIC, // static images, uses CustomScaleImageView
         GIF, // GIF images, uses GifImageView
         MOVIE, // movies/audio, uses PlayerView from Exoplayer
-        PDF, // things openable in mupdf
-        SWF // not supported in-app
+        OTHER
     }
 
     public boolean hidden = ChanSettings.hideImages.get();
@@ -87,15 +85,9 @@ public class PostImage {
             case "flac":
                 type = MOVIE;
                 break;
-            case "xps":
-            case "cbz":
-            case "epub":
-            case "fb2":
             case "pdf":
-                type = PDF;
-                break;
             case "swf":
-                type = SWF;
+                type = OTHER;
                 break;
             default:
                 type = STATIC;
@@ -141,6 +133,9 @@ public class PostImage {
         public Builder() {
         }
 
+        /**
+         * @param serverFilename The filename stored on the server; for 4chan it is a UNIX timestamp
+         */
         public Builder serverFilename(String serverFilename) {
             this.serverFilename = serverFilename;
             return this;
@@ -166,11 +161,17 @@ public class PostImage {
             return this;
         }
 
+        /**
+         * @param filename The filename of the file that was actually uploaded, not the one assigned by the server
+         */
         public Builder filename(String filename) {
             this.filename = filename;
             return this;
         }
 
+        /**
+         * @param extension The extension for the image, must not have a period prepended to it
+         */
         public Builder extension(String extension) {
             this.extension = extension;
             return this;

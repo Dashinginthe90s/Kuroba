@@ -50,7 +50,6 @@ import static android.text.TextUtils.isEmpty;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static android.widget.LinearLayout.VERTICAL;
-import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
@@ -106,8 +105,6 @@ public class BoardSetupController
     @Override
     public void onCreate() {
         super.onCreate();
-
-        inject(this);
 
         // Inflate
         view = inflate(context, R.layout.controller_board_setup);

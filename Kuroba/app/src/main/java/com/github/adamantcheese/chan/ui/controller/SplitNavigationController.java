@@ -179,6 +179,11 @@ public class SplitNavigationController
         }
     }
 
+    @Override
+    public boolean isViewingCatalog() {
+        return true; // catalog always visible
+    }
+
     public void popAll() {
         if (popup != null) {
             presentingThisController.stopPresenting();

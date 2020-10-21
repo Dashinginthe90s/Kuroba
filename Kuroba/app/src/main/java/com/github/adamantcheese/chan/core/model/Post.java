@@ -24,12 +24,15 @@ import androidx.annotation.MainThread;
 
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
+import com.github.adamantcheese.chan.utils.Logger;
 import com.vdurmont.emoji.EmojiParser;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -147,7 +150,7 @@ public class Post
 
         time = builder.unixTimestampSeconds;
         if (builder.images == null) {
-            images = Collections.emptyList();
+            images = Collections.unmodifiableList(Collections.emptyList());
         } else {
             images = Collections.unmodifiableList(builder.images);
         }
@@ -270,6 +273,23 @@ public class Post
         return images.isEmpty() ? null : images.get(0);
     }
 
+    /**
+     * Adds an image to the images set; generally don't do this unless you have some special reason for it!
+     * Add images while the post is still a Builder instance if you can instead!
+     */
+    public void addImage(PostImage image) {
+        try {
+            Field imageList = Post.class.getDeclaredField("images");
+            imageList.setAccessible(true);
+            List<PostImage> newImages = new ArrayList<>(images);
+            newImages.add(image);
+            imageList.set(this, Collections.unmodifiableList(newImages));
+            imageList.setAccessible(false);
+        } catch (Exception e) {
+            Logger.d(this, "Failed to add image with reflection", e);
+        }
+    }
+
     @MainThread
     public boolean hasFilterParameters() {
         return filterRemove || filterHighlightedColor != 0 || filterReplies || filterStub;
@@ -281,8 +301,7 @@ public class Post
         for (char c : comment.toString().toCharArray()) {
             commentTotal += c;
         }
-        return 31 * no + 31 * board.code.hashCode() + 31 * board.siteId + 31 * (deleted.get() ? 1 : 0)
-                + 31 * commentTotal;
+        return Objects.hash(no, board.code, board.siteId, deleted.get(), commentTotal);
     }
 
     @Override
@@ -476,13 +495,13 @@ public class Post
             this.posterId = posterId;
 
             // Stolen from the 4chan extension
-            int hash = this.posterId.hashCode() >>> 8;
+            int hash = 0;
+            for (int i = 0; i < posterId.length(); i++) {
+                hash = (hash << 5) - hash + posterId.charAt(i);
+            }
+            hash = hash >>> 8;
 
-            int r = (hash & Color.RED) << 16;
-            int g = (hash & Color.GREEN) << 8;
-            int b = hash & Color.BLUE;
-
-            this.idColor = Color.BLACK + r + g + b;
+            this.idColor = Color.BLACK | hash;
 
             return this;
         }
@@ -515,17 +534,15 @@ public class Post
                 boolean onlyOnOp,
                 boolean filterSaved
         ) {
-            synchronized (this) {
-                // for any filter effect, OR it with any previous filters; the highlighted color will be the last one in the list
-                filterHighlightedColor = highlightedColor;
-                filterStub = filterStub | stub;
-                filterRemove = filterRemove | remove;
-                filterWatch = filterWatch | watch;
-                this.filterReplies = this.filterReplies | filterReplies;
-                filterOnlyOP = filterOnlyOP | onlyOnOp;
-                this.filterSaved = this.filterSaved | filterSaved;
-                return this;
-            }
+            // for any filter effect, OR it with any previous filters; the highlighted color will be the last one in the list
+            filterHighlightedColor = highlightedColor;
+            filterStub = filterStub | stub;
+            filterRemove = filterRemove | remove;
+            filterWatch = filterWatch | watch;
+            this.filterReplies = this.filterReplies | filterReplies;
+            filterOnlyOP = filterOnlyOP | onlyOnOp;
+            this.filterSaved = this.filterSaved | filterSaved;
+            return this;
         }
 
         public Builder isSavedReply(boolean isSavedReply) {

@@ -18,10 +18,13 @@ package com.github.adamantcheese.chan.ui.controller.settings;
 
 import android.content.Context;
 
+import androidx.core.util.Pair;
+
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.settings.ChanSettings.LayoutMode;
 import com.github.adamantcheese.chan.ui.settings.BooleanSettingView;
+import com.github.adamantcheese.chan.ui.settings.IntegerSettingView;
 import com.github.adamantcheese.chan.ui.settings.LinkSettingView;
 import com.github.adamantcheese.chan.ui.settings.ListSettingView;
 import com.github.adamantcheese.chan.ui.settings.ListSettingView.Item;
@@ -80,7 +83,7 @@ public class AppearanceSettingsController
             requiresRestart.add(layout.add(new BooleanSettingView(this,
                     ChanSettings.neverHideToolbar,
                     R.string.setting_never_hide_toolbar,
-                    0
+                    R.string.empty
             )));
 
             requiresRestart.add(layout.add(new BooleanSettingView(this,
@@ -92,7 +95,7 @@ public class AppearanceSettingsController
             layout.add(new BooleanSettingView(this,
                     ChanSettings.repliesButtonsBottom,
                     R.string.setting_buttons_bottom,
-                    0
+                    R.string.empty
             ));
 
             requiresUiRefresh.add(layout.add(new BooleanSettingView(this,
@@ -106,6 +109,12 @@ public class AppearanceSettingsController
                     "Bottom captcha",
                     "Makes the JS captcha float to the bottom of the screen"
             ));
+
+            requiresRestart.add(layout.add(new BooleanSettingView(this,
+                    ChanSettings.reverseDrawer,
+                    "Reverse drawer stack order",
+                    "Flips the direction of the drawer to be from bottom to top"
+            )));
 
             requiresUiRefresh.add(layout.add(new BooleanSettingView(this,
                     ChanSettings.useImmersiveModeForGallery,
@@ -132,7 +141,19 @@ public class AppearanceSettingsController
         {
             SettingsGroup post = new SettingsGroup(R.string.settings_group_post);
 
-            setupFontSizeSetting(post);
+            requiresUiRefresh.add(post.add(new IntegerSettingView(this,
+                    ChanSettings.thumbnailSize,
+                    R.string.setting_thumbnail_scale,
+                    R.string.empty,
+                    new Pair<>(50, 200)
+            )));
+
+            requiresUiRefresh.add(post.add(new IntegerSettingView(this,
+                    ChanSettings.fontSize,
+                    R.string.setting_font_size,
+                    R.string.empty,
+                    new Pair<>(10, 19)
+            )));
 
             requiresUiRefresh.add(post.add(new BooleanSettingView(this,
                     ChanSettings.fontAlternate,
@@ -155,19 +176,19 @@ public class AppearanceSettingsController
             requiresUiRefresh.add(post.add(new BooleanSettingView(this,
                     ChanSettings.postFullDate,
                     R.string.setting_post_full_date,
-                    0
+                    R.string.empty
             )));
 
             requiresUiRefresh.add(post.add(new BooleanSettingView(this,
                     ChanSettings.postFileInfo,
                     R.string.setting_post_file_info,
-                    0
+                    R.string.empty
             )));
 
             requiresUiRefresh.add(post.add(new BooleanSettingView(this,
                     ChanSettings.postFilename,
                     R.string.setting_post_filename,
-                    0
+                    R.string.empty
             )));
 
             requiresUiRefresh.add(post.add(new BooleanSettingView(this,
@@ -197,7 +218,7 @@ public class AppearanceSettingsController
             requiresUiRefresh.add(post.add(new BooleanSettingView(this,
                     ChanSettings.anonymizeIds,
                     R.string.setting_anonymize_ids,
-                    0
+                    R.string.empty
             )));
 
             requiresUiRefresh.add(post.add(new BooleanSettingView(this,
@@ -207,9 +228,9 @@ public class AppearanceSettingsController
             )));
 
             requiresUiRefresh.add(post.add(new BooleanSettingView(this,
-                    ChanSettings.parseYoutubeTitles,
-                    R.string.setting_youtube_title,
-                    R.string.setting_youtube_title_description
+                    ChanSettings.parseMediaTitles,
+                    R.string.setting_media_title,
+                    R.string.setting_media_title_description
             )));
 
             requiresUiRefresh.add(post.add(new BooleanSettingView(this,
@@ -252,8 +273,8 @@ public class AppearanceSettingsController
 
             requiresUiRefresh.add(images.add(new BooleanSettingView(this,
                     ChanSettings.parsePostImageLinks,
-                    R.string.setting_image_link_loading_title,
-                    R.string.setting_image_link_loading_description
+                    R.string.setting_enable_image_link_loading,
+                    R.string.setting_enable_image_link_loading_description
             )));
 
             images.add(new BooleanSettingView(this,
@@ -311,21 +332,6 @@ public class AppearanceSettingsController
                         ? R.string.setting_album_grid_span_count_portrait
                         : R.string.setting_album_grid_span_count_landscape,
                 gridColumnsAlbum
-        )));
-    }
-
-    private void setupFontSizeSetting(SettingsGroup post) {
-        List<Item<String>> fontSizes = new ArrayList<>();
-        for (int size = 10; size <= 19; size++) {
-            String name = size + (String.valueOf(size).equals(ChanSettings.fontSize.getDefault()) ? " "
-                    + getString(R.string.setting_font_size_default) : "");
-            fontSizes.add(new Item<>(name, String.valueOf(size)));
-        }
-
-        requiresUiRefresh.add(post.add(new ListSettingView<>(this,
-                ChanSettings.fontSize,
-                R.string.setting_font_size,
-                fontSizes
         )));
     }
 }

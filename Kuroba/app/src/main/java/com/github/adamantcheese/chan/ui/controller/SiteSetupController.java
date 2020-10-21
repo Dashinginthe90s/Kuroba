@@ -34,9 +34,6 @@ import com.github.adamantcheese.chan.ui.settings.StringSettingView;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.inject.Inject;
-
-import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
@@ -44,21 +41,21 @@ import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 public class SiteSetupController
         extends SettingsController
         implements SiteSetupPresenter.Callback {
-    @Inject
     SiteSetupPresenter presenter;
 
     private Site site;
     private LinkSettingView boardsLink;
     private LinkSettingView loginLink;
 
-    public SiteSetupController(Context context) {
+    public SiteSetupController(Context context, Site site) {
         super(context);
+        this.site = site;
+        presenter = new SiteSetupPresenter(this, site);
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
-        inject(this);
 
         // Navigation
         navigation.setTitle(R.string.settings_screen);
@@ -70,15 +67,7 @@ public class SiteSetupController
 
         // Preferences
         populatePreferences();
-
-        // Presenter
-        presenter.create(this, site);
-
         buildPreferences();
-    }
-
-    public void setSite(Site site) {
-        this.site = site;
     }
 
     @Override

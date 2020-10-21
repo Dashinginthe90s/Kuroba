@@ -38,8 +38,7 @@ import androidx.lifecycle.OnLifecycleEvent;
 import com.github.adamantcheese.chan.controller.Controller;
 import com.github.adamantcheese.chan.controller.NavigationController;
 import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager;
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
-import com.github.adamantcheese.chan.core.manager.FilterWatchManager;
+import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.core.manager.UpdateManager;
 import com.github.adamantcheese.chan.core.manager.WatchManager;
 import com.github.adamantcheese.chan.core.model.orm.Board;
@@ -69,6 +68,9 @@ import com.github.k1rakishou.fsaf.callback.FSAFActivityCallbacks;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Type;
@@ -82,7 +84,6 @@ import kotlin.jvm.functions.Function1;
 
 import static android.content.Intent.FLAG_ACTIVITY_NEW_TASK;
 import static com.github.adamantcheese.chan.Chan.inject;
-import static com.github.adamantcheese.chan.Chan.instance;
 import static com.github.adamantcheese.chan.core.settings.ChanSettings.LayoutMode.AUTO;
 import static com.github.adamantcheese.chan.core.settings.ChanSettings.LayoutMode.PHONE;
 import static com.github.adamantcheese.chan.core.settings.ChanSettings.LayoutMode.SLIDE;
@@ -116,11 +117,17 @@ public class StartActivity
     private int currentNightModeBits;
 
     @Inject
-    DatabaseManager databaseManager;
+    DatabaseLoadableManager databaseLoadableManager;
     @Inject
     SiteRepository siteRepository;
     @Inject
     FileChooser fileChooser;
+    @Inject
+    SiteResolver siteResolver;
+    @Inject
+    WatchManager watchManager;
+    @Inject
+    Gson gson;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -132,6 +139,7 @@ public class StartActivity
             return;
         }
 
+        ThemeHelper.init();
         ThemeHelper.setupContext(this);
         fileChooser.setCallbacks(this);
         imagePickDelegate = new ImagePickDelegate(this);
@@ -159,9 +167,6 @@ public class StartActivity
         if (ChanSettings.fullUserRotationEnable.get()) {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_USER);
         }
-
-        //startup this here, so it runs its whatever in the background
-        instance(FilterWatchManager.class);
     }
 
     private void setupFromStateOrFreshLaunch(Bundle savedInstanceState) {
@@ -191,7 +196,7 @@ public class StartActivity
         final Uri data = getIntent().getData();
         // Start from an url launch.
         if (data != null) {
-            final Loadable loadableResult = instance(SiteResolver.class).resolveLoadableForUrl(data.toString());
+            final Loadable loadableResult = siteResolver.resolveLoadableForUrl(data.toString());
 
             if (loadableResult != null) {
                 loadedFromURL = true;
@@ -248,20 +253,14 @@ public class StartActivity
             return null;
         }
 
-        Site site = instance(SiteRepository.class).forId(stateLoadable.siteId);
+        Site site = siteRepository.forId(stateLoadable.siteId);
         if (site != null) {
             Board board = site.board(stateLoadable.boardCode);
             if (board != null) {
                 stateLoadable.site = site;
                 stateLoadable.board = board;
-
-                // When restarting the parcelable isn't actually deserialized, but the same
-                // object instance is reused. This means that the loadables we gave to the
-                // state are the same instance, and also have the id set etc. We don't need to
-                // query these from the loadablemanager.
                 if (forThread && stateLoadable.id == 0) {
-                    DatabaseLoadableManager loadableManager = databaseManager.getDatabaseLoadableManager();
-                    stateLoadable = loadableManager.get(stateLoadable);
+                    stateLoadable = databaseLoadableManager.get(stateLoadable);
                 }
 
                 return stateLoadable;
@@ -317,7 +316,6 @@ public class StartActivity
         // pop any image viewers
         popAllControllerClass(ImageViewerNavigationController.class);
         if (intent.getExtras() != null) {
-            WatchManager watchManager = instance(WatchManager.class);
             int pinId = intent.getExtras().getInt("pin_id", -2);
             if (pinId != -2 && mainNavigationController.getTop() instanceof BrowseController) {
                 if (pinId == -1) {
@@ -584,6 +582,13 @@ public class StartActivity
         Runtime.getRuntime().exit(0);
     }
 
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onEvent(Chan.ForegroundChangedMessage message) {
+        if (!message.inForeground) {
+            DatabaseUtils.runTaskAsync(databaseLoadableManager.purgeOld());
+        }
+    }
+
     @Override
     public void fsafStartActivityForResult(@NotNull Intent intent, int requestCode) {
         startActivityForResult(intent, requestCode);
@@ -594,21 +599,24 @@ public class StartActivity
     @OnLifecycleEvent(Lifecycle.Event.ON_START)
     public void onStart() {
         super.onStart();
-        //restore parsed youtube stuff
-        Gson gson = instance(Gson.class);
-        Map<String, Pair<String, String>> titles = gson.fromJson(PersistableChanState.youtubeCache.get(), lruType);
+        EventBus.getDefault().register(this);
+        //restore parsed media title stuff
+        Map<String, Pair<String, String>> titles =
+                gson.fromJson(PersistableChanState.videoTitleDurCache.get(), lruType);
         //reconstruct
-        CommentParserHelper.youtubeCache = new LruCache<>(500);
+        CommentParserHelper.videoTitleDurCache = new LruCache<>(500);
         for (String s : titles.keySet()) {
-            CommentParserHelper.youtubeCache.put(s, titles.get(s));
+            CommentParserHelper.videoTitleDurCache.put(s, titles.get(s));
         }
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
     public void onStop() {
         super.onStop();
-        //store parsed youtube stuff, extra prevention of unneeded API calls
-        Gson gson = instance(Gson.class);
-        PersistableChanState.youtubeCache.set(gson.toJson(CommentParserHelper.youtubeCache.snapshot(), lruType));
+        EventBus.getDefault().unregister(this);
+        //store parsed media title stuff, extra prevention of unneeded API calls
+        PersistableChanState.videoTitleDurCache.set(gson.toJson(CommentParserHelper.videoTitleDurCache.snapshot(),
+                lruType
+        ));
     }
 }

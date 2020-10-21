@@ -4,16 +4,22 @@ import android.text.TextUtils;
 import android.util.SparseArray;
 
 import androidx.annotation.NonNull;
-import androidx.core.util.Pair;
 
-import com.github.adamantcheese.chan.core.database.DatabaseManager;
-import com.github.adamantcheese.chan.core.model.json.site.SiteConfig;
+import com.github.adamantcheese.chan.core.database.DatabaseBoardManager;
+import com.github.adamantcheese.chan.core.database.DatabaseFilterManager;
+import com.github.adamantcheese.chan.core.database.DatabaseHideManager;
+import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager;
+import com.github.adamantcheese.chan.core.database.DatabasePinManager;
+import com.github.adamantcheese.chan.core.database.DatabaseSavedReplyManager;
+import com.github.adamantcheese.chan.core.database.DatabaseSiteManager;
+import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.core.model.orm.Filter;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.model.orm.SiteModel;
 import com.github.adamantcheese.chan.core.settings.primitives.JsonSettings;
 import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.utils.Logger;
+import com.google.gson.Gson;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -21,21 +27,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Observable;
 
-import javax.inject.Inject;
-
+import static com.github.adamantcheese.chan.Chan.instance;
 import static com.github.adamantcheese.chan.core.site.SiteRegistry.SITE_CLASSES;
 
 public class SiteRepository {
-    private DatabaseManager databaseManager;
+    private DatabaseSiteManager databaseSiteManager;
+    private Gson gson;
     private Sites sitesObservable = new Sites();
 
     public Site forId(int id) {
         return sitesObservable.forId(id);
     }
 
-    @Inject
-    public SiteRepository(DatabaseManager databaseManager) {
-        this.databaseManager = databaseManager;
+    public SiteRepository(DatabaseSiteManager databaseSiteManager, Gson gson) {
+        this.databaseSiteManager = databaseSiteManager;
+        this.gson = gson;
     }
 
     public Sites all() {
@@ -43,7 +49,7 @@ public class SiteRepository {
     }
 
     public SiteModel byId(int id) {
-        return databaseManager.runTask(databaseManager.getDatabaseSiteManager().byId(id));
+        return DatabaseUtils.runTask(databaseSiteManager.byId(id));
     }
 
     public void updateUserSettings(Site site, JsonSettings jsonSettings) {
@@ -53,12 +59,12 @@ public class SiteRepository {
     }
 
     public void updateSiteUserSettingsAsync(SiteModel siteModel, JsonSettings jsonSettings) {
-        siteModel.storeUserSettings(jsonSettings);
-        databaseManager.runTaskAsync(databaseManager.getDatabaseSiteManager().update(siteModel));
+        siteModel.storeUserSettings(gson, jsonSettings);
+        DatabaseUtils.runTaskAsync(databaseSiteManager.update(siteModel));
     }
 
     public Map<Integer, Integer> getOrdering() {
-        return databaseManager.runTask(databaseManager.getDatabaseSiteManager().getOrdering());
+        return DatabaseUtils.runTask(databaseSiteManager.getOrdering());
     }
 
     public void updateSiteOrderingAsync(List<Site> sites) {
@@ -67,7 +73,7 @@ public class SiteRepository {
             ids.add(site.id());
         }
 
-        databaseManager.runTaskAsync(databaseManager.getDatabaseSiteManager().updateOrdering(ids), r -> {
+        DatabaseUtils.runTaskAsync(databaseSiteManager.updateOrdering(ids), r -> {
             sitesObservable.wasReordered();
             sitesObservable.notifyObservers();
         });
@@ -76,7 +82,7 @@ public class SiteRepository {
     public void initialize() {
         List<Site> sites = new ArrayList<>();
 
-        List<SiteModel> models = databaseManager.runTask(databaseManager.getDatabaseSiteManager().getAll());
+        List<SiteModel> models = DatabaseUtils.runTask(databaseSiteManager.getAll());
 
         for (SiteModel siteModel : models) {
             SiteConfigSettingsHolder holder;
@@ -87,13 +93,8 @@ public class SiteRepository {
                 break;
             }
 
-            Site site = holder.site;
-            SiteConfig config = holder.config;
-            JsonSettings settings = holder.settings;
-
-            site.initialize(siteModel.id, config, settings);
-
-            sites.add(site);
+            holder.site.initialize(siteModel.id, holder.settings);
+            sites.add(holder.site);
         }
 
         sitesObservable.addAll(sites);
@@ -108,16 +109,14 @@ public class SiteRepository {
     public Site createFromClass(Class<? extends Site> siteClass) {
         Site site = instantiateSiteClass(siteClass);
 
-        SiteConfig config = new SiteConfig();
         JsonSettings settings = new JsonSettings();
 
         //the index doesn't necessarily match the key value to get the class ID anymore since sites were removed
-        config.classId = SITE_CLASSES.keyAt(SITE_CLASSES.indexOfValue(site.getClass()));
-        config.external = false;
+        int classId = SITE_CLASSES.keyAt(SITE_CLASSES.indexOfValue(site.getClass()));
 
-        SiteModel model = createFromClass(config, settings);
+        SiteModel model = createFromClass(classId, settings);
 
-        site.initialize(model.id, config, settings);
+        site.initialize(model.id, settings);
 
         sitesObservable.add(site);
 
@@ -128,21 +127,17 @@ public class SiteRepository {
         return site;
     }
 
-    private SiteModel createFromClass(SiteConfig config, JsonSettings userSettings) {
+    private SiteModel createFromClass(int classID, JsonSettings userSettings) {
         SiteModel siteModel = new SiteModel();
-        siteModel.storeConfig(config);
-        siteModel.storeUserSettings(userSettings);
-        databaseManager.runTask(databaseManager.getDatabaseSiteManager().add(siteModel));
+        siteModel.classID = classID;
+        siteModel.storeUserSettings(gson, userSettings);
+        DatabaseUtils.runTask(databaseSiteManager.add(siteModel));
 
         return siteModel;
     }
 
     private SiteConfigSettingsHolder instantiateSiteFromModel(SiteModel siteModel) {
-        Pair<SiteConfig, JsonSettings> configFields = siteModel.loadConfigFields();
-        SiteConfig config = configFields.first;
-        JsonSettings settings = configFields.second;
-
-        return new SiteConfigSettingsHolder(instantiateSiteClass(config.classId), config, settings);
+        return new SiteConfigSettingsHolder(instantiateSiteClass(siteModel.classID), siteModel.loadConfig(gson));
     }
 
     @NonNull
@@ -164,30 +159,29 @@ public class SiteRepository {
     }
 
     public void removeSite(Site site) {
-        databaseManager.runTask(() -> {
+        DatabaseUtils.runTask(() -> {
             removeFilters(site);
-            databaseManager.getDatabaseBoardManager().deleteBoards(site).call();
+            DatabaseUtils.runTask(instance(DatabaseBoardManager.class).deleteBoards(site));
 
-            List<Loadable> siteLoadables = databaseManager.getDatabaseLoadableManager().getLoadables(site).call();
+            List<Loadable> siteLoadables =
+                    DatabaseUtils.runTask(instance(DatabaseLoadableManager.class).getLoadables(site));
             if (!siteLoadables.isEmpty()) {
-                databaseManager.getDatabaseSavedThreadManager().deleteSavedThreads(siteLoadables).call();
-                databaseManager.getDatabasePinManager().deletePinsFromLoadables(siteLoadables).call();
-                databaseManager.getDatabaseHistoryManager().deleteHistory(siteLoadables).call();
-                databaseManager.getDatabaseLoadableManager().deleteLoadables(siteLoadables).call();
+                DatabaseUtils.runTask(instance(DatabasePinManager.class).deletePinsFromLoadables(siteLoadables));
+                DatabaseUtils.runTask(instance(DatabaseLoadableManager.class).deleteLoadables(siteLoadables));
             }
 
-            databaseManager.getDatabaseSavedReplyManager().deleteSavedReplies(site).call();
-            databaseManager.getDatabaseHideManager().deleteThreadHides(site).call();
-            databaseManager.getDatabaseSiteManager().deleteSite(site).call();
+            DatabaseUtils.runTask(instance(DatabaseSavedReplyManager.class).deleteSavedReplies(site));
+            DatabaseUtils.runTask(instance(DatabaseHideManager.class).deleteThreadHides(site));
+            DatabaseUtils.runTask(instance(DatabaseSiteManager.class).deleteSite(site));
             return null;
         });
     }
 
-    private void removeFilters(Site site)
-            throws Exception {
+    private void removeFilters(Site site) {
         List<Filter> filtersToDelete = new ArrayList<>();
+        DatabaseFilterManager databaseFilterManager = instance(DatabaseFilterManager.class);
 
-        for (Filter filter : databaseManager.getDatabaseFilterManager().getFilters().call()) {
+        for (Filter filter : DatabaseUtils.runTask(databaseFilterManager.getFilters())) {
             if (filter.allBoards || TextUtils.isEmpty(filter.boards)) {
                 continue;
             }
@@ -201,7 +195,7 @@ public class SiteRepository {
             }
         }
 
-        databaseManager.getDatabaseFilterManager().deleteFilters(filtersToDelete).call();
+        DatabaseUtils.runTask(databaseFilterManager.deleteFilters(filtersToDelete));
     }
 
     public class Sites
@@ -264,15 +258,12 @@ public class SiteRepository {
         @NonNull
         Site site;
         @NonNull
-        SiteConfig config;
-        @NonNull
         JsonSettings settings;
 
         public SiteConfigSettingsHolder(
-                @NonNull Site site, @NonNull SiteConfig config, @NonNull JsonSettings settings
+                @NonNull Site site, @NonNull JsonSettings settings
         ) {
             this.site = site;
-            this.config = config;
             this.settings = settings;
         }
     }
