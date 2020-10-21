@@ -488,6 +488,9 @@ public class ToolbarContainer
             if (item.searchText != null) {
                 searchLayout.setText(item.searchText);
             }
+            else {
+                searchLayout.openKeyboard();
+            }
 
             searchLayout.setCatalogSearchColors();
             updatePaddings(searchLayout, dp(16), -1, -1, -1);

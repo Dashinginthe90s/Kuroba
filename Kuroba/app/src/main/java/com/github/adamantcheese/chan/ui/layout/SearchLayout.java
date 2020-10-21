@@ -99,7 +99,7 @@ public class SearchLayout
         searchViewParams.gravity = Gravity.CENTER_VERTICAL;
         addView(searchView, searchViewParams);
         searchView.setFocusable(true);
-        searchView.requestFocus();
+        //searchView.requestFocus();
 
         clearButton.setAlpha(0f);
         clearButton.setImageResource(R.drawable.ic_clear_white_24dp);
@@ -128,5 +128,9 @@ public class SearchLayout
 
     public interface SearchLayoutCallback {
         void onSearchEntered(String entered);
+    }
+
+    public void openKeyboard() {
+        searchView.requestFocus();
     }
 }
