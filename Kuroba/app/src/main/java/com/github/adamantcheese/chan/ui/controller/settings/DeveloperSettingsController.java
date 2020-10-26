@@ -34,6 +34,8 @@ import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.core.manager.FilterWatchManager;
 import com.github.adamantcheese.chan.core.manager.WakeManager;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
+import com.github.adamantcheese.chan.core.settings.PersistableChanState;
+import com.github.adamantcheese.chan.features.embedding.EmbeddingEngine;
 import com.github.adamantcheese.chan.ui.controller.LogsController;
 import com.github.adamantcheese.chan.utils.Logger;
 
@@ -80,6 +82,14 @@ public class DeveloperSettingsController
         logsButton.setOnClickListener(v -> navigationController.pushController(new LogsController(context)));
         logsButton.setText(R.string.settings_open_logs);
         wrapper.addView(logsButton);
+
+        // Debug filters (highlights matches in comments)
+        Switch debugFiltersSwitch = new Switch(context);
+        debugFiltersSwitch.setPadding(dp(16), 0, dp(16), 0);
+        debugFiltersSwitch.setText("Highlight filters; tap highlight to see matched filter");
+        debugFiltersSwitch.setChecked(ChanSettings.debugFilters.get());
+        debugFiltersSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> ChanSettings.debugFilters.toggle());
+        wrapper.addView(debugFiltersSwitch);
 
         // Enable/Disable verbose logs
         Switch verboseLogsSwitch = new Switch(context);
@@ -136,6 +146,15 @@ public class DeveloperSettingsController
         });
         clearFilterWatchIgnores.setText("Clear ignored filter watches");
         wrapper.addView(clearFilterWatchIgnores);
+
+        Button clearVideoTitleCache = new Button(context);
+        clearVideoTitleCache.setOnClickListener(v -> {
+            EmbeddingEngine.videoTitleDurCache.evictAll();
+            PersistableChanState.videoTitleDurCache.setSync(PersistableChanState.videoTitleDurCache.getDefault());
+            showToast(context, "Cleared video title cache");
+        });
+        clearVideoTitleCache.setText("Clear video title cache");
+        wrapper.addView(clearVideoTitleCache);
 
         //THREAD STACK DUMPER
         Button dumpAllThreadStacks = new Button(context);

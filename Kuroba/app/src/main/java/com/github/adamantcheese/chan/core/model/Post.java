@@ -18,12 +18,15 @@ package com.github.adamantcheese.chan.core.model;
 
 import android.graphics.Color;
 import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.TextUtils;
 
 import androidx.annotation.AnyThread;
 import androidx.annotation.MainThread;
 
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
+import com.github.adamantcheese.chan.ui.text.SearchHighlightSpan;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.vdurmont.emoji.EmojiParser;
 
@@ -35,6 +38,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Contains all data needed to represent a single post.<br>
@@ -123,7 +128,7 @@ public class Post
     private long lastModified;
     private String title = "";
 
-    public final boolean needsExtraParse;
+    public boolean needsEmbedding;
 
     public int compareTo(Post p) {
         return -Long.compare(this.time, p.time);
@@ -180,7 +185,7 @@ public class Post
         linkables = new ArrayList<>(builder.linkables);
         repliesTo = Collections.unmodifiableSet(builder.repliesToIds);
 
-        needsExtraParse = builder.needsExtraParse;
+        needsEmbedding = builder.needsEmbedding;
     }
 
     @AnyThread
@@ -282,6 +287,13 @@ public class Post
             Field imageList = Post.class.getDeclaredField("images");
             imageList.setAccessible(true);
             List<PostImage> newImages = new ArrayList<>(images);
+            for (PostImage postImage : newImages) {
+                if (image.equals(postImage)) {
+                    // this image was already added before (as though it were a set)
+                    imageList.setAccessible(false);
+                    return;
+                }
+            }
             newImages.add(image);
             imageList.set(this, Collections.unmodifiableList(newImages));
             imageList.setAccessible(false);
@@ -335,6 +347,27 @@ public class Post
                 + "]";
     }
 
+    public void highlightSearch(String query) {
+        synchronized (comment) {
+            // clear out any old spans
+            for (SearchHighlightSpan span : comment.getSpans(0, comment.length(), SearchHighlightSpan.class)) {
+                comment.removeSpan(span);
+            }
+            if (TextUtils.isEmpty(query)) return;
+            Pattern search = Pattern.compile(query, Pattern.CASE_INSENSITIVE);
+            Matcher searchMatch = search.matcher(comment);
+            // apply new spans
+            while (searchMatch.find()) {
+                comment.setSpan(
+                        new SearchHighlightSpan(),
+                        searchMatch.toMatchResult().start(),
+                        searchMatch.toMatchResult().end(),
+                        Spanned.SPAN_INCLUSIVE_EXCLUSIVE
+                );
+            }
+        }
+    }
+
     @SuppressWarnings("UnusedReturnValue")
     public static final class Builder {
         public Board board;
@@ -356,7 +389,7 @@ public class Post
         public String tripcode = "";
 
         public long unixTimestampSeconds = -1L;
-        public List<PostImage> images;
+        public List<PostImage> images = new ArrayList<>();
 
         public List<PostHttpIcon> httpIcons;
 
@@ -380,7 +413,7 @@ public class Post
         private Set<PostLinkable> linkables = new HashSet<>();
         private Set<Integer> repliesToIds = new HashSet<>();
 
-        public boolean needsExtraParse;
+        public boolean needsEmbedding;
 
         public Builder() {
         }
@@ -481,10 +514,6 @@ public class Post
 
         public Builder images(List<PostImage> images) {
             synchronized (this) {
-                if (this.images == null) {
-                    this.images = new ArrayList<>(images.size());
-                }
-
                 this.images.addAll(images);
             }
 
@@ -594,6 +623,8 @@ public class Post
             if (board == null || id < 0 || opId < 0 || unixTimestampSeconds < 0 || comment == null) {
                 throw new IllegalArgumentException("Post data not complete");
             }
+
+            needsEmbedding = needsEmbedding | board.mathTags;
 
             return new Post(this);
         }

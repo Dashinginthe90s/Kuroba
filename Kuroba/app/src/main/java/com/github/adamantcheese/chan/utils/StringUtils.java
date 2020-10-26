@@ -2,6 +2,7 @@ package com.github.adamantcheese.chan.utils;
 
 import android.util.Base64;
 
+import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -10,13 +11,12 @@ import com.vdurmont.emoji.EmojiParser;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 
-import kotlin.io.ByteStreamsKt;
 import okhttp3.HttpUrl;
 import okio.ByteString;
-import okio.internal.ByteStringKt;
 
 public class StringUtils {
     @SuppressWarnings("RegExpRedundantEscape")
@@ -110,7 +110,7 @@ public class StringUtils {
         return false;
     }
 
-    public static boolean containsAny(String s, String[] contains) {
+    public static boolean containsAny(String s, List<String> contains) {
         for (String contain : contains) {
             if (s.contains(contain)) {
                 return true;
@@ -148,6 +148,11 @@ public class StringUtils {
         return UTCFormat.format(new Date());
     }
 
+    public static String getCurrentTimeDefaultLocale() {
+        return DateFormat.getDateTimeInstance(DateFormat.DEFAULT, DateFormat.DEFAULT, Locale.getDefault())
+                .format(new Date());
+    }
+
     public static String centerEllipsize(String string, int maxLength) {
         if (string.length() <= maxLength) {
             return string;
@@ -174,5 +179,18 @@ public class StringUtils {
             }
         }
         return count;
+    }
+
+    /**
+     * @param color A ColorInt
+     * @return RRGGBB, no alpha
+     */
+    public static String getRGBColorIntString(@ColorInt int color) {
+        return String.format("%06X", 0xFFFFFF & color);
+    }
+
+    public static boolean containsIgnoreCase(@Nullable CharSequence source, @Nullable CharSequence needle) {
+        if (source == null || needle == null) return false;
+        return source.toString().toLowerCase(Locale.ENGLISH).contains(needle.toString().toLowerCase(Locale.ENGLISH));
     }
 }

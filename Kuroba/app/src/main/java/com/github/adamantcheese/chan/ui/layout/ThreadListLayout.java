@@ -260,9 +260,7 @@ public class ThreadListLayout
         }
     }
 
-    public void showPosts(
-            ChanThread thread, PostsFilter filter, boolean initial, boolean refreshAfterHideOrRemovePosts
-    ) {
+    public void showPosts(ChanThread thread, PostsFilter filter, boolean initial, boolean hardRefresh) {
         showingThread = thread;
         if (initial) {
             reply.getPresenter().bindLoadable(thread.getLoadable());
@@ -321,7 +319,7 @@ public class ThreadListLayout
             filteredPosts.removeAll(toRemove);
         }
 
-        postAdapter.setThread(thread.getLoadable(), filteredPosts, refreshAfterHideOrRemovePosts);
+        postAdapter.setThread(thread.getLoadable(), filteredPosts, filter.getQuery(), hardRefresh);
     }
 
     public boolean onBack() {
@@ -546,7 +544,7 @@ public class ThreadListLayout
                 Post post = postView.getPost();
 
                 for (PostImage image : post.images) {
-                    if (image.equalUrl(postImage)) {
+                    if (image.equals(postImage)) {
                         return postView.getThumbnailView(postImage);
                     }
                 }
@@ -803,11 +801,8 @@ public class ThreadListLayout
 
     private final RecyclerView.ItemDecoration SANTA = new RecyclerView.ItemDecoration() {
         @Override
-        public void onDrawOver(
-                @NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state
-        ) {
-            if (ChanSettings.thumbnailSize.get() < 85)
-                return; // below this it doesn't really work too well
+        public void onDrawOver(@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
+            if (ChanSettings.thumbnailSize.get() < 85) return; // below this it doesn't really work too well
             for (int i = 0, j = parent.getChildCount(); i < j; i++) {
                 View child = parent.getChildAt(i);
                 if (child instanceof PostCellInterface) {

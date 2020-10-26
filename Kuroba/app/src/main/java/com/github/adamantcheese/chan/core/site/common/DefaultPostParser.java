@@ -25,11 +25,14 @@ import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
 
 import com.github.adamantcheese.chan.R;
+import com.github.adamantcheese.chan.core.manager.FilterEngine;
 import com.github.adamantcheese.chan.core.model.Post;
+import com.github.adamantcheese.chan.core.model.orm.Filter;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.parser.CommentParser;
 import com.github.adamantcheese.chan.core.site.parser.CommentParserHelper;
 import com.github.adamantcheese.chan.core.site.parser.PostParser;
+import com.github.adamantcheese.chan.features.embedding.EmbeddingEngine;
 import com.github.adamantcheese.chan.ui.text.AbsoluteSizeSpanHashed;
 import com.github.adamantcheese.chan.ui.text.ForegroundColorSpanHashed;
 import com.github.adamantcheese.chan.ui.theme.Theme;
@@ -46,7 +49,12 @@ import org.jsoup.parser.Parser;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import javax.inject.Inject;
+
+import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getContrastColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.sp;
@@ -55,13 +63,16 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.sp;
 public class DefaultPostParser
         implements PostParser {
     private CommentParser commentParser;
+    @Inject
+    private FilterEngine filterEngine;
 
     public DefaultPostParser(CommentParser commentParser) {
         this.commentParser = commentParser;
+        inject(this);
     }
 
     @Override
-    public Post parse(@NonNull Theme theme, Post.Builder builder, Callback callback) {
+    public Post parse(@NonNull Theme theme, Post.Builder builder, List<Filter> filters, Callback callback) {
         if (!TextUtils.isEmpty(builder.name)) {
             builder.name = Parser.unescapeEntities(builder.name, false);
         }
@@ -77,6 +88,8 @@ public class DefaultPostParser
         } else {
             builder.comment = new SpannableStringBuilder("");
         }
+
+        processPostFilter(filters, builder);
 
         return builder.build();
     }
@@ -179,7 +192,7 @@ public class DefaultPostParser
             Logger.e(this, "Error parsing comment html", e);
         }
 
-        CommentParserHelper.addPostImages(post);
+        EmbeddingEngine.addPostImages(post);
 
         return total;
     }
@@ -228,27 +241,42 @@ public class DefaultPostParser
         }
     }
 
-    //This method parses emoji but only as long as the text isn't in a [math] block; this can be extended as necessary
-    //
-    //Text with math not at the start is "offset", so the loop processes alternating items starting at index 0
-    //  This covers the case when there are no math tags as well, as the split will return a single item array and the loop runs once
-    //Text with math at the start is not "offset", so the loop processes alternating items starting at index 1, as index 0 is covered by [3]
-    //  This covers the case when there are only math tags as well, as the split returns a single item array processed by [3] and the loop is skipped
+    // Modified from 3.20 of Regular Expressions Cookbook, 2nd Edition
+    // find that bad boy on LibGen, it's good stuff
+    private final Pattern MATH_PATTERN = Pattern.compile("\\[(math|eqn)].*?\\[/\1]");
+
     private String processEmojiMath(String text) {
-        String[] split = text.split("\\[/?math]");
         StringBuilder rebuilder = new StringBuilder();
-        boolean offset = true;
-        if (text.startsWith("[math]")) {
-            rebuilder.append("[math]").append(split[0]).append("[/math]"); //[3]
-            offset = false;
+        Matcher regexMatcher = MATH_PATTERN.matcher(text);
+        int lastIndex = 0;
+        while (regexMatcher.find()) {
+            rebuilder.append(EmojiParser.parseToUnicode(text.substring(lastIndex, regexMatcher.start())));
+            rebuilder.append(regexMatcher.group());
+            lastIndex = regexMatcher.end();
         }
-        for (int i = (offset ? 0 : 1); i < split.length; i++) {
-            if ((i - (offset ? 0 : 1)) % 2 == 0) {
-                rebuilder.append(EmojiParser.parseToUnicode(split[i])); //[1]
-            } else {
-                rebuilder.append("[math]").append(split[i]).append("[/math]"); //[2]
+        rebuilder.append(EmojiParser.parseToUnicode(text.substring(lastIndex)));
+        return rebuilder.toString();
+    }
+
+    private void processPostFilter(List<Filter> filters, Post.Builder post) {
+        for (Filter f : filters) {
+            FilterEngine.FilterAction action = FilterEngine.FilterAction.forId(f.action);
+            if (filterEngine.matches(f, post)) {
+                switch (action) {
+                    case COLOR:
+                        post.filter(f.color, false, false, false, f.applyToReplies, f.onlyOnOP, f.applyToSaved);
+                        break;
+                    case HIDE:
+                        post.filter(0, true, false, false, f.applyToReplies, f.onlyOnOP, false);
+                        break;
+                    case REMOVE:
+                        post.filter(0, false, true, false, f.applyToReplies, f.onlyOnOP, false);
+                        break;
+                    case WATCH:
+                        post.filter(0, false, false, true, false, true, false);
+                        break;
+                }
             }
         }
-        return rebuilder.toString();
     }
 }

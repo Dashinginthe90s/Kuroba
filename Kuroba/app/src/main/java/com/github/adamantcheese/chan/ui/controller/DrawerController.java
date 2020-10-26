@@ -93,15 +93,13 @@ public class DrawerController
     private final Runnable refreshRunnable = new Runnable() {
         @Override
         public void run() {
-            header.findViewById(R.id.refresh).setVisibility(VISIBLE); // TODO
+            header.findViewById(R.id.refresh).setVisibility(VISIBLE);
         }
     };
 
     private final ItemTouchHelper.Callback pinItemTouchHelperCallback = new ItemTouchHelper.Callback() {
         @Override
-        public int getMovementFlags(
-                @NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder
-        ) {
+        public int getMovementFlags(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
             return makeMovementFlags(UP | DOWN, RIGHT | LEFT);
         }
 
@@ -330,6 +328,7 @@ public class DrawerController
         if (recyclerView.getAdapter() == null || !pinMode) return;
         synchronized (watchManager.getAllPins()) {
             getPinAdapter().notifyItemInserted(watchManager.getAllPins().indexOf(message.pin));
+            recyclerView.scrollToPosition(watchManager.getAllPins().indexOf(message.pin));
         }
         if (ChanSettings.drawerAutoOpenCount.get() < 5 || ChanSettings.alwaysOpenDrawer.get()) {
             drawerLayout.openDrawer(drawer);

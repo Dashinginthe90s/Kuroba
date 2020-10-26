@@ -29,7 +29,6 @@ import androidx.core.content.ContextCompat;
 
 import com.github.adamantcheese.chan.BuildConfig;
 import com.github.adamantcheese.chan.Chan;
-import com.github.adamantcheese.chan.utils.Debouncer;
 import com.github.adamantcheese.chan.core.database.DatabasePinManager;
 import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.core.model.ChanThread;
@@ -43,6 +42,7 @@ import com.github.adamantcheese.chan.core.site.loader.ChanThreadLoader;
 import com.github.adamantcheese.chan.ui.service.LastPageNotification;
 import com.github.adamantcheese.chan.ui.service.WatchNotification;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
+import com.github.adamantcheese.chan.utils.Debouncer;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.adamantcheese.chan.utils.StringUtils;
 
@@ -559,7 +559,7 @@ public class WatchManager
                 }
 
                 if (pin.isError) {
-                    // When a thread gets deleted (and are not downloading) just mark all posts as read
+                    // When a thread gets deleted just mark all posts as read
                     // since there is no way for us to read them anyway
                     pin.watchLastCount = pin.watchNewCount;
                     pinsToUpdateInDatabase.add(pin);
@@ -729,7 +729,7 @@ public class WatchManager
         if (fromBackground && !waitingForPinWatchersForBackgroundUpdate.isEmpty()) {
             Logger.d(this,
                     waitingForPinWatchersForBackgroundUpdate.size() + " pin watchers beginning updates, started at "
-                            + StringUtils.getCurrentDateAndTimeUTC()
+                            + StringUtils.getCurrentTimeDefaultLocale()
             );
             wakeManager.manageLock(true, WatchManager.this);
         }
@@ -744,7 +744,7 @@ public class WatchManager
                 waitingForPinWatchersForBackgroundUpdate.remove(pinWatcher);
 
                 if (waitingForPinWatchersForBackgroundUpdate.isEmpty()) {
-                    Logger.d(this, "All watchers updated, finished at " + StringUtils.getCurrentDateAndTimeUTC());
+                    Logger.d(this, "All watchers updated, finished at " + StringUtils.getCurrentTimeDefaultLocale());
                     waitingForPinWatchersForBackgroundUpdate = null;
                     wakeManager.manageLock(false, WatchManager.this);
                 }

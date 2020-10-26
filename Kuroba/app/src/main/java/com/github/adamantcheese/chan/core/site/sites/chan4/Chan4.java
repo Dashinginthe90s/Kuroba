@@ -73,6 +73,8 @@ public class Chan4
         extends SiteBase {
     private static final Random random = new Random();
 
+    private ChanReader reader;
+
     public static final SiteUrlHandler URL_HANDLER = new SiteUrlHandler() {
 
         private final String[] mediaHosts = new String[]{"i.4cdn.org"};
@@ -266,6 +268,11 @@ public class Chan4
         @Override
         public HttpUrl login() {
             return sys.newBuilder().addPathSegment("auth").build();
+        }
+
+        @Override
+        public HttpUrl banned() {
+            return HttpUrl.get("https://www.4chan.org/banned");
         }
     };
 
@@ -545,7 +552,10 @@ public class Chan4
 
     @Override
     public ChanReader chanReader() {
-        return new FutabaChanReader();
+        if (reader == null) {
+            reader = new FutabaChanReader();
+        }
+        return reader;
     }
 
     @Override
