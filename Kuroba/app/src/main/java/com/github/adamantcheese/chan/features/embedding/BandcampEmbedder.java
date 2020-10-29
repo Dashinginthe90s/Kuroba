@@ -15,6 +15,7 @@ import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 
 import org.jsoup.nodes.Document;
 
+import java.io.StringReader;
 import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -24,16 +25,17 @@ import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.HttpUrl;
 
-import static com.github.adamantcheese.chan.features.embedding.EmbeddingEngine.addHTMLEmbedCalls;
+import static com.github.adamantcheese.chan.features.embedding.EmbeddingEngine.addStandardEmbedCalls;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.StringUtils.getRGBColorIntString;
+import static com.github.adamantcheese.chan.utils.StringUtils.prettyPrint8601Time;
 
 public class BandcampEmbedder
-        implements Embedder {
+        extends HtmlEmbedder {
     // note that for this pattern, we allow for non-album/track links, but in the case of a bandcamp page that links directly
-    // to the music overview, the parse should fail and go to the default fail embed
-    private static final Pattern BANDCAMP_PATTERN = Pattern.compile("https?://(?:\\w+\\.)?bandcamp\\.com(?:/.*)?\\b");
-    private static final Pattern ALBUMTRACKID_PATTERN = Pattern.compile("(?:album|track)=(\\d+)");
+    // to the music overview, the parse will fail, so don't add in a hotlink
+    private static final Pattern BANDCAMP_PATTERN =
+            Pattern.compile("https?://(?:\\w+\\.)?bandcamp\\.com(?:/.*)?(?:/|\\b)");
 
     @Override
     public List<String> getShortRepresentations() {
@@ -57,37 +59,86 @@ public class BandcampEmbedder
 
     @Override
     public List<Pair<Call, Callback>> generateCallPairs(Theme theme, Post post) {
-        return addHTMLEmbedCalls(this, theme, post);
+        return addStandardEmbedCalls(this, theme, post);
     }
 
     @Override
-    public EmbedResult parseResult(JsonReader jsonReader, Document htmlDocument) {
-        String extractedPlayer = htmlDocument.select("meta[property=twitter:player]").get(0).attr("content");
-        Matcher idMatcher = ALBUMTRACKID_PATTERN.matcher(extractedPlayer);
-        HttpUrl embeddedPlayer = HttpUrl.get(htmlDocument.location());
-        if (idMatcher.find()) {
-            //noinspection ConstantConditions
-            long id = Long.parseLong(idMatcher.group(1));
-            boolean isAlbum = extractedPlayer.contains("album");
-            String constructedUrl =
-                    "https://bandcamp.com/EmbeddedPlayer/" + (isAlbum ? "album=" : "track=") + id + "/size=large/bgcol="
-                            + getRGBColorIntString(getAttrColor(ThemeHelper.getTheme().resValue, R.attr.backcolor))
-                            + "/linkcol=" + getRGBColorIntString(getAttrColor(ThemeHelper.getTheme().resValue,
-                            android.R.attr.textColorPrimary
-                    )) + "/minimal=true/transparent=true/";
+    public EmbedResult process(Document response) {
+        String duration = null;
+        PostImage extra = null;
+        int curThemeResValue = ThemeHelper.getTheme().resValue;
+        try {
+            String extractedPlayer = response.select("meta[property=twitter:player]").get(0).attr("content");
+            extractedPlayer = extractedPlayer.replace("v=2/", "")
+                    .replace("notracklist=true/", "")
+                    .replace("twittercard=true/", "")
+                    .replaceAll("linkcol=.{6}",
+                            "linkcol=" + getRGBColorIntString(getAttrColor(curThemeResValue,
+                                    android.R.attr.textColorPrimary
+                            )) + "/"
+                    ) + "bgcol=" + getRGBColorIntString(getAttrColor(curThemeResValue, R.attr.backcolor))
+                    + "/minimal=true/transparent=true/";
+            HttpUrl embeddedPlayer = HttpUrl.get(extractedPlayer);
 
-            embeddedPlayer = HttpUrl.get(constructedUrl);
+            JsonReader durReader =
+                    new JsonReader(new StringReader(response.select("script[type=application/ld+json]").get(0).html()));
+            durReader.beginObject();
+            while (durReader.hasNext()) {
+                switch (durReader.nextName()) {
+                    case "track": // for an album
+                        durReader.beginObject();
+                        while (durReader.hasNext()) {
+                            if ("itemListElement".equals(durReader.nextName())) { // track element
+                                durReader.beginArray();
+                                while (durReader.hasNext()) {
+                                    durReader.beginObject(); // track data
+                                    while (durReader.hasNext()) {
+                                        if ("item".equals(durReader.nextName())) {
+                                            durReader.beginObject();
+                                            while (durReader.hasNext()) {
+                                                if ("duration".equals(durReader.nextName())
+                                                        && duration == null) { // only the first track's duration
+                                                    duration = prettyPrint8601Time(durReader.nextString());
+                                                } else {
+                                                    durReader.skipValue();
+                                                }
+                                            }
+                                            durReader.endObject();
+                                        } else {
+                                            durReader.skipValue();
+                                        }
+                                    }
+                                    durReader.endObject();
+                                }
+                                durReader.endArray();
+                            } else {
+                                durReader.skipValue();
+                            }
+                        }
+                        durReader.endObject();
+                        break;
+                    case "duration": // for a track
+                        duration = prettyPrint8601Time(durReader.nextString());
+                        break;
+                    default:
+                        durReader.skipValue();
+                        break;
+                }
+            }
+            durReader.endObject();
+
+            extra = new PostImage.Builder().serverFilename(response.title())
+                    .thumbnailUrl(HttpUrl.get(response.select("#tralbumArt > .popupImage").get(0).attr("href")))
+                    .imageUrl(embeddedPlayer)
+                    .filename(response.title())
+                    .extension("iframe")
+                    .isInlined(true)
+                    .build();
+        } catch (Exception ignored) {
+            // no player on this page
+            duration = "";
         }
 
-        return new EmbedResult(htmlDocument.title(),
-                "",
-                new PostImage.Builder().serverFilename(htmlDocument.title())
-                        .thumbnailUrl(HttpUrl.get(htmlDocument.select("#tralbumArt > .popupImage").get(0).attr("href")))
-                        .imageUrl(embeddedPlayer)
-                        .filename(htmlDocument.title())
-                        .extension("iframe")
-                        .isInlined(true)
-                        .build()
-        );
+        return new EmbedResult(response.title(), duration, extra);
     }
 }

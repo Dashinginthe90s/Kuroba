@@ -1,9 +1,9 @@
 package com.github.adamantcheese.chan.features.embedding;
 
 import android.graphics.Bitmap;
-import android.util.JsonReader;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.util.Pair;
 
 import com.github.adamantcheese.chan.core.model.Post;
@@ -12,11 +12,9 @@ import com.github.adamantcheese.chan.core.repository.BitmapRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.features.embedding.EmbeddingEngine.EmbedResult;
 import com.github.adamantcheese.chan.ui.theme.Theme;
-import com.github.adamantcheese.chan.utils.NetUtils;
+import com.github.adamantcheese.chan.utils.NetUtilsClasses;
+import com.github.adamantcheese.chan.utils.NetUtilsClasses.IgnoreFailureCallback;
 
-import org.jsoup.nodes.Document;
-
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -27,13 +25,14 @@ import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.HttpUrl;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 import static com.github.adamantcheese.chan.features.embedding.EmbeddingEngine.performStandardEmbedding;
 
 public class VocarooEmbedder
-        implements Embedder {
+        implements Embedder<Void> {
     private static final Pattern VOCAROO_LINK_PATTERN =
-            Pattern.compile("https?://(?:(?:www\\.)?vocaroo\\.com|voca\\.ro)/(\\w{12})\\b");
+            Pattern.compile("https?://(?:(?:www\\.)?vocaroo\\.com|voca\\.ro)/(\\w{12})(?:/|\\b)");
 
     @Override
     public List<String> getShortRepresentations() {
@@ -65,7 +64,7 @@ public class VocarooEmbedder
                 if (URL == null) continue;
                 final String id = linkMatcher.group(1);
 
-                calls.add(new Pair<>(new NetUtils.NullCall(HttpUrl.get(URL)), new NetUtils.IgnoreFailureCallback() {
+                calls.add(new Pair<>(new NetUtilsClasses.NullCall(HttpUrl.get(URL)), new IgnoreFailureCallback() {
                     @Override
                     public void onResponse(@NonNull Call call, @NonNull Response response) {
                         performStandardEmbedding(theme, post, new EmbedResult(
@@ -89,8 +88,12 @@ public class VocarooEmbedder
     }
 
     @Override
-    public EmbedResult parseResult(JsonReader jsonReader, Document htmlDocument)
-            throws IOException {
+    public Void convert(HttpUrl baseURL, @Nullable ResponseBody body) {
+        return null; // not used for this embedder, as everything's in the URL
+    }
+
+    @Override
+    public EmbedResult process(Void response) {
         return null; // not used for this embedder, as everything's in the URL
     }
 }

@@ -24,6 +24,7 @@ import android.text.TextUtils;
 import androidx.annotation.AnyThread;
 import androidx.annotation.MainThread;
 
+import com.github.adamantcheese.chan.core.manager.FilterEngine;
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.text.SearchHighlightSpan;
@@ -99,7 +100,7 @@ public class Post
      */
     public final Set<Integer> repliesTo;
 
-    public final List<PostLinkable> linkables;
+    public final Set<PostLinkable> linkables;
 
     public final CharSequence subjectSpan;
 
@@ -182,7 +183,7 @@ public class Post
         subjectSpan = builder.subjectSpan;
         nameTripcodeIdCapcodeSpan = builder.nameTripcodeIdCapcodeSpan;
 
-        linkables = new ArrayList<>(builder.linkables);
+        linkables = new HashSet<>(builder.linkables);
         repliesTo = Collections.unmodifiableSet(builder.repliesToIds);
 
         needsEmbedding = builder.needsEmbedding;
@@ -354,7 +355,7 @@ public class Post
                 comment.removeSpan(span);
             }
             if (TextUtils.isEmpty(query)) return;
-            Pattern search = Pattern.compile(query, Pattern.CASE_INSENSITIVE);
+            Pattern search = Pattern.compile(FilterEngine.escapeRegex(query), Pattern.CASE_INSENSITIVE);
             Matcher searchMatch = search.matcher(comment);
             // apply new spans
             while (searchMatch.find()) {
@@ -592,7 +593,7 @@ public class Post
             }
         }
 
-        public Builder linkables(List<PostLinkable> linkables) {
+        public Builder linkables(Set<PostLinkable> linkables) {
             synchronized (this) {
                 this.linkables = new HashSet<>(linkables);
                 return this;

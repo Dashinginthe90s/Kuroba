@@ -64,8 +64,24 @@ import static java.util.concurrent.TimeUnit.MINUTES;
 
 public class ChanSettings {
     public static final String EMPTY_JSON = "{}";
-    public static final String NOTIFY_ALL_POSTS = "all";
-    public static final String NOTIFY_ONLY_QUOTES = "quotes";
+
+    //region Setting Enums
+    public enum WatchNotifyMode
+            implements OptionSettingItem {
+        NOTIFY_ALL_POSTS("all"),
+        NOTIFY_ONLY_QUOTES("quotes");
+
+        String mode;
+
+        WatchNotifyMode(String mode) {
+            this.mode = mode;
+        }
+
+        @Override
+        public String getKey() {
+            return mode;
+        }
+    }
 
     public enum MediaAutoLoadMode
             implements OptionSettingItem {
@@ -162,6 +178,7 @@ public class ChanSettings {
             return name;
         }
     }
+    //endregion
 
     private static Proxy proxy;
     private static final String sharedPrefsFile = "shared_prefs/" + BuildConfig.APPLICATION_ID + "_preferences.xml";
@@ -173,8 +190,8 @@ public class ChanSettings {
     public static final IntegerSetting watchBackgroundInterval;
     public static final BooleanSetting removeWatchedFromCatalog;
     public static final BooleanSetting watchLastPageNotify;
-    public static final StringSetting watchNotifyMode;
-    public static final StringSetting watchSound;
+    public static final OptionsSetting<WatchNotifyMode> watchNotifyMode;
+    public static final OptionsSetting<WatchNotifyMode> watchSound;
     public static final BooleanSetting watchPeek;
     //endregion
 
@@ -213,8 +230,7 @@ public class ChanSettings {
     public static final BooleanSetting showAnonymousName;
     public static final BooleanSetting anonymizeIds;
     public static final BooleanSetting addDubs;
-    public static final BooleanSetting parseMediaTitles;
-    public static final BooleanSetting parseYoutubeDuration;
+    public static final BooleanSetting enableEmbedding;
     public static final BooleanSetting enableEmoji;
 
     // Images
@@ -331,8 +347,16 @@ public class ChanSettings {
                     watchBackgroundInterval)));
             removeWatchedFromCatalog = new BooleanSetting(p, "remove_catalog_watch", false);
             watchLastPageNotify = new BooleanSetting(p, "preference_watch_last_page_notify", false);
-            watchNotifyMode = new StringSetting(p, "preference_watch_notify_mode", NOTIFY_ALL_POSTS);
-            watchSound = new StringSetting(p, "preference_watch_sound", "quotes");
+            watchNotifyMode = new OptionsSetting<>(p,
+                    "preference_watch_notify_mode",
+                    WatchNotifyMode.class,
+                    WatchNotifyMode.NOTIFY_ALL_POSTS
+            );
+            watchSound = new OptionsSetting<>(p,
+                    "preference_watch_sound",
+                    WatchNotifyMode.class,
+                    WatchNotifyMode.NOTIFY_ONLY_QUOTES
+            );
             watchPeek = new BooleanSetting(p, "preference_watch_peek", true);
             //endregion
 
@@ -371,8 +395,7 @@ public class ChanSettings {
             showAnonymousName = new BooleanSetting(p, "preference_show_anonymous_name", false);
             anonymizeIds = new BooleanSetting(p, "preference_anonymize_ids", false);
             addDubs = new BooleanSetting(p, "add_dubs", false);
-            parseMediaTitles = new BooleanSetting(p, "parse_media_titles", true);
-            parseYoutubeDuration = new BooleanSetting(p, "parse_youtube_duration", false);
+            enableEmbedding = new BooleanSetting(p, "parse_media_titles", true);
             enableEmoji = new BooleanSetting(p, "enable_emoji", false);
 
             // Images
@@ -411,9 +434,10 @@ public class ChanSettings {
             shareUrl = new BooleanSetting(p, "preference_image_share_url", false);
 
             // Other options
-            // this is 4chanX's key, but it is recommended that you use your own
-            parseYoutubeAPIKey =
-                    new StringSetting(p, "parse_youtube_API_key", "AIzaSyB5_zaen_-46Uhz1xGR-lz1YoUMHqCD6CE");
+            // 4chanX's key: AIzaSyB5_zaen_-46Uhz1xGR-lz1YoUMHqCD6CE; not set as a default because lots of people use it
+            // and the quota tends to run out quickly, ending up in a lot of non-parsed titles
+            // default no-api key tries its best to get the info it can, but may fail on certain youtube videos without warning
+            parseYoutubeAPIKey = new StringSetting(p, "parse_youtube_API_key", "");
             fullUserRotationEnable = new BooleanSetting(p, "full_user_rotation_enable", true);
             allowFilePickChooser = new BooleanSetting(p, "allow_file_picker_chooser", false);
             showCopyApkUpdateDialog = new BooleanSetting(p, "show_copy_apk_update_dialog", true);
