@@ -61,7 +61,7 @@ import static com.github.adamantcheese.chan.core.manager.FilterType.SUBJECT;
 import static com.github.adamantcheese.chan.core.manager.FilterType.TRIPCODE;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class FilterEngine {
     public enum FilterAction {
@@ -80,7 +80,7 @@ public class FilterEngine {
             return enums[id];
         }
 
-        private static FilterAction[] enums = new FilterAction[4];
+        private static final FilterAction[] enums = new FilterAction[4];
 
         static {
             for (FilterAction type : values()) {
@@ -196,7 +196,7 @@ public class FilterEngine {
      */
     @AnyThread
     public boolean matches(Filter filter, Post.Builder post) {
-        if (!post.moderatorCapcode.equals("") || post.sticky) return false;
+        if (!post.moderatorCapcode.isEmpty() || post.sticky) return false;
         if (filter.onlyOnOP && !post.op) return false;
         if (filter.applyToSaved && !post.isSavedReply) return false;
 

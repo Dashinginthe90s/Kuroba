@@ -26,7 +26,6 @@ import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.IBinder;
-import android.text.Editable;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 
@@ -62,18 +61,18 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString
 
 public class WatchNotification
         extends Service {
-    private static String NOTIFICATION_ID_STR = "1";
-    private static String NOTIFICATION_ID_ALERT_STR = "2";
-    private int NOTIFICATION_ID = 1;
+    private static final String NOTIFICATION_ID_STR = "1";
+    private static final String NOTIFICATION_ID_ALERT_STR = "2";
+    private final int NOTIFICATION_ID = 1;
     private static final String NOTIFICATION_NAME = "Watch notification";
     private static final String NOTIFICATION_NAME_ALERT = "Watch notification alert";
     public static final String PAUSE_PINS_KEY = "pause_pins";
 
     private static final Pattern SHORTEN_NO_PATTERN = Pattern.compile(">>\\d+(?=\\d{3})(\\d{3})");
 
-    private int NOTIFICATION_LIGHT = 0x1;
-    private int NOTIFICATION_SOUND = 0x2;
-    private int NOTIFICATION_PEEK = 0x4;
+    private final int NOTIFICATION_LIGHT = 0x1;
+    private final int NOTIFICATION_SOUND = 0x2;
+    private final int NOTIFICATION_PEEK = 0x4;
 
     @Inject
     WatchManager watchManager;
@@ -263,42 +262,40 @@ public class WatchNotification
 
         List<Post> finalPosts = new ArrayList<>(postsForExpandedLines);
         Collections.sort(finalPosts);
+        finalPosts = finalPosts.subList(Math.max(0, finalPosts.size() - 10), finalPosts.size()); // last 10 posts
+
         List<CharSequence> expandedLines = new ArrayList<>();
         for (Post postForExpandedLine : finalPosts) {
-            CharSequence prefix;
+            SpannableStringBuilder prefix;
             if (postForExpandedLine.getTitle().length() <= 6) {
-                prefix = postForExpandedLine.getTitle();
+                prefix = new SpannableStringBuilder(postForExpandedLine.getTitle());
             } else {
-                prefix = postForExpandedLine.getTitle().subSequence(0, 6);
+                prefix = new SpannableStringBuilder(postForExpandedLine.getTitle().subSequence(0, 6));
             }
 
-            CharSequence comment = postForExpandedLine.image() != null ? "(img) " : "";
-            if (postForExpandedLine.comment.length() > 0) {
-                // FIXME: this thing is pretty slow sometimes (50-200ms).
-                //  Can we replace it with something faster?
-                comment = TextUtils.concat(comment, postForExpandedLine.comment);
-            }
+            SpannableStringBuilder comment =
+                    new SpannableStringBuilder(postForExpandedLine.image() != null ? "(img) " : "").append(
+                            postForExpandedLine.comment == null ? "" : postForExpandedLine.comment);
 
             // Replace >>123456789 with >789 to shorten the notification
             // Also replace spoilered shit with █
             // All spans are deleted by the replaceAll call and you can't modify their ranges easily so this will have to do
-            Editable toFix = new SpannableStringBuilder(comment);
-            PostLinkable[] spans = toFix.getSpans(0, comment.length(), PostLinkable.class);
+            PostLinkable[] spans = comment.getSpans(0, comment.length(), PostLinkable.class);
             for (PostLinkable span : spans) {
                 if (span.type == PostLinkable.Type.SPOILER) {
-                    int start = toFix.getSpanStart(span);
-                    int end = toFix.getSpanEnd(span);
+                    int start = comment.getSpanStart(span);
+                    int end = comment.getSpanEnd(span);
 
                     char[] chars = new char[end - start];
                     Arrays.fill(chars, '█');
                     String s = new String(chars);
 
-                    toFix.replace(start, end, s);
+                    comment.replace(start, end, s);
                 }
             }
-            comment = SHORTEN_NO_PATTERN.matcher(toFix).replaceAll(">$1");
+            comment = new SpannableStringBuilder(SHORTEN_NO_PATTERN.matcher(comment).replaceAll(">$1"));
 
-            expandedLines.add(prefix + ": " + comment);
+            expandedLines.add(prefix.append(": ").append(comment));
         }
 
         boolean alert = PersistableChanState.watchLastCount.get() < listQuoting.size();
@@ -372,7 +369,7 @@ public class WatchNotification
                 pauseWatching.putExtra(PAUSE_PINS_KEY, true);
                 PendingIntent pauseWatchIntent =
                         PendingIntent.getService(this, 0, pauseWatching, PendingIntent.FLAG_UPDATE_CURRENT);
-                builder.addAction(R.drawable.ic_pause_white_24dp,
+                builder.addAction(R.drawable.ic_fluent_pause_24_filled,
                         getString(R.string.watch_pause_pins),
                         pauseWatchIntent
                 );
@@ -380,9 +377,7 @@ public class WatchNotification
 
             //setup the display in the notification
             NotificationCompat.InboxStyle style = new NotificationCompat.InboxStyle();
-            for (CharSequence line : expandedLines.subList(Math.max(0, expandedLines.size() - 10),
-                    expandedLines.size()
-            )) {
+            for (CharSequence line : expandedLines) {
                 style.addLine(line);
             }
             style.setBigContentTitle(title);

@@ -50,7 +50,7 @@ import static com.github.adamantcheese.chan.core.saver.ImageSaver.BundledDownloa
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppFileProvider;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openIntent;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class ImageSaveTask
         extends FileCacheListener {
@@ -61,12 +61,12 @@ public class ImageSaveTask
     @Inject
     CacheHandler cacheHandler;
 
-    private PostImage postImage;
+    private final PostImage postImage;
     private AbstractFile destination;
-    private boolean share;
+    private final boolean share;
     private String subFolder;
     private boolean success = false;
-    private SingleSubject<ImageSaver.BundledDownloadResult> imageSaveTaskAsyncResult;
+    private final SingleSubject<ImageSaver.BundledDownloadResult> imageSaveTaskAsyncResult;
 
     public ImageSaveTask(PostImage postImage, boolean share) {
         inject(this);

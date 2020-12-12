@@ -32,14 +32,17 @@ import com.github.adamantcheese.chan.core.cache.FileCacheV2;
 import com.github.adamantcheese.chan.core.database.DatabaseHelper;
 import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.core.manager.FilterWatchManager;
+import com.github.adamantcheese.chan.core.manager.SettingsNotificationManager;
 import com.github.adamantcheese.chan.core.manager.WakeManager;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.settings.PersistableChanState;
+import com.github.adamantcheese.chan.core.settings.primitives.Setting;
 import com.github.adamantcheese.chan.features.embedding.EmbeddingEngine;
 import com.github.adamantcheese.chan.ui.controller.LogsController;
 import com.github.adamantcheese.chan.utils.Logger;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -48,7 +51,7 @@ import javax.inject.Inject;
 
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class DeveloperSettingsController
         extends Controller {
@@ -85,16 +88,16 @@ public class DeveloperSettingsController
 
         // Debug filters (highlights matches in comments)
         Switch debugFiltersSwitch = new Switch(context);
-        debugFiltersSwitch.setPadding(dp(16), 0, dp(16), 0);
         debugFiltersSwitch.setText("Highlight filters; tap highlight to see matched filter");
+        debugFiltersSwitch.setTextColor(getAttrColor(context, android.R.attr.textColor));
         debugFiltersSwitch.setChecked(ChanSettings.debugFilters.get());
         debugFiltersSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> ChanSettings.debugFilters.toggle());
         wrapper.addView(debugFiltersSwitch);
 
         // Enable/Disable verbose logs
         Switch verboseLogsSwitch = new Switch(context);
-        verboseLogsSwitch.setPadding(dp(16), 0, dp(16), 0);
         verboseLogsSwitch.setText("Verbose downloader logs");
+        verboseLogsSwitch.setTextColor(getAttrColor(context, android.R.attr.textColor));
         verboseLogsSwitch.setChecked(ChanSettings.verboseLogs.get());
         verboseLogsSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> ChanSettings.verboseLogs.toggle());
         wrapper.addView(verboseLogsSwitch);
@@ -120,16 +123,39 @@ public class DeveloperSettingsController
         //DATABASE SUMMARY
         TextView summaryText = new TextView(context);
         summaryText.setText("Database summary:\n" + DatabaseUtils.getDatabaseSummary());
-        summaryText.setPadding(dp(16), dp(5), 0, 0);
+        summaryText.setPadding(0, dp(5), 0, 0);
         wrapper.addView(summaryText);
 
-        //DATABASE RESET
+        //APP RESET
         Button resetDbButton = new Button(context);
         resetDbButton.setOnClickListener(v -> {
             databaseHelper.reset();
+            for (Field f : ChanSettings.class.getFields()) {
+                if (Modifier.isStatic(f.getModifiers()) && Modifier.isFinal(f.getModifiers())
+                        && Setting.class.isAssignableFrom(f.getType())) {
+                    try {
+                        Setting setting = (Setting) f.get(ChanSettings.class);
+                        setting.setSync(setting.getDefault());
+                    } catch (Exception e) {
+                        Logger.e(this, "", e);
+                    }
+                }
+            }
+            for (Field f : PersistableChanState.class.getFields()) {
+                if (Modifier.isStatic(f.getModifiers()) && Modifier.isFinal(f.getModifiers())
+                        && Setting.class.isAssignableFrom(f.getType())) {
+                    try {
+                        Setting setting = (Setting) f.get(ChanSettings.class);
+                        setting.setSync(setting.getDefault());
+                    } catch (Exception e) {
+                        Logger.e(this, "", e);
+                    }
+                }
+            }
+            context.getSharedPreferences("com.skydoves.balloon", Context.MODE_PRIVATE).edit().clear().commit();
             ((StartActivity) context).restartApp();
         });
-        resetDbButton.setText("Delete database & restart");
+        resetDbButton.setText("Reset application and restart fresh");
         wrapper.addView(resetDbButton);
 
         //FILTER WATCH IGNORE RESET
@@ -188,23 +214,27 @@ public class DeveloperSettingsController
         dumpAllThreadStacks.setText("Dump active thread stack traces to log");
         wrapper.addView(dumpAllThreadStacks);
 
-        // Reset the thread open counter
-        Button resetThreadOpenCounter = new Button(context);
-        resetThreadOpenCounter.setOnClickListener(v -> {
-            ChanSettings.threadOpenCounter.reset();
-            showToast(context, "Done");
-        });
-        resetThreadOpenCounter.setText("Reset thread open counter");
-        wrapper.addView(resetThreadOpenCounter);
-
         Switch threadCrashSwitch = new Switch(context);
-        threadCrashSwitch.setPadding(dp(16), 0, dp(16), 0);
         threadCrashSwitch.setText("Crash on wrong thread");
+        threadCrashSwitch.setTextColor(getAttrColor(context, android.R.attr.textColor));
         threadCrashSwitch.setChecked(ChanSettings.crashOnWrongThread.get());
         threadCrashSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> ChanSettings.crashOnWrongThread.toggle());
         wrapper.addView(threadCrashSwitch);
 
+        Button setAppUpdate = new Button(context);
+        setAppUpdate.setOnClickListener(v ->
+                SettingsNotificationManager.postNotification(SettingsNotificationManager.SettingNotification.ApkUpdate));
+        setAppUpdate.setText("Post app update notification");
+        wrapper.addView(setAppUpdate);
+
+        Button setReport = new Button(context);
+        setReport.setOnClickListener(v ->
+                SettingsNotificationManager.postNotification(SettingsNotificationManager.SettingNotification.CrashLog));
+        setReport.setText("Post report notification");
+        wrapper.addView(setReport);
+
         ScrollView scrollView = new ScrollView(context);
+        scrollView.setPadding(dp(16), dp(16), dp(16), dp(16));
         scrollView.addView(wrapper);
         view = scrollView;
         view.setBackgroundColor(getAttrColor(context, R.attr.backcolor));

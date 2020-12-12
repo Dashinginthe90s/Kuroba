@@ -30,6 +30,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
+import okhttp3.HttpUrl;
+
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
@@ -37,7 +39,7 @@ import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 public class RemovedPostsController
         extends BaseFloatingController
         implements View.OnClickListener {
-    private RemovedPostsHelper removedPostsHelper;
+    private final RemovedPostsHelper removedPostsHelper;
 
     private ConstraintLayout viewHolder;
     private ListView postsListView;
@@ -123,9 +125,9 @@ public class RemovedPostsController
     }
 
     public static class RemovedPost {
-        private List<PostImage> images;
-        private int postNo;
-        private String comment;
+        private final List<PostImage> images;
+        private final int postNo;
+        private final String comment;
         private boolean checked;
 
         public RemovedPost(List<PostImage> images, int postNo, String comment, boolean checked) {
@@ -158,7 +160,7 @@ public class RemovedPostsController
 
     public static class RemovedPostAdapter
             extends ArrayAdapter<RemovedPost> {
-        private List<RemovedPost> removedPostsCopy = new ArrayList<>();
+        private final List<RemovedPost> removedPostsCopy = new ArrayList<>();
 
         public RemovedPostAdapter(@NonNull Context context, int resource) {
             super(context, resource);
@@ -194,13 +196,13 @@ public class RemovedPostsController
                 postImage.setVisibility(VISIBLE);
                 NetUtils.makeBitmapRequest(image.getThumbnailUrl(), new NetUtilsClasses.BitmapResult() {
                     @Override
-                    public void onBitmapFailure(Exception e) {
+                    public void onBitmapFailure(HttpUrl source, Exception e) {
                         Logger.e(RemovedPostAdapter.this, "Error while trying to download post image", e);
                         postImage.setVisibility(GONE);
                     }
 
                     @Override
-                    public void onBitmapSuccess(@NonNull Bitmap bitmap, boolean fromCache) {
+                    public void onBitmapSuccess(HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
                         postImage.setImageBitmap(bitmap);
                     }
                 }, postImage.getWidth(), postImage.getHeight());

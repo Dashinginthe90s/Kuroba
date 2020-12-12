@@ -46,7 +46,7 @@ public class ThreadStatusCell
 
     private TextView text;
     private String error;
-    private Handler handler = new Handler(msg -> {
+    private final Handler handler = new Handler(msg -> {
         if (msg.what == MESSAGE_INVALIDATE) {
             if (running && update()) {
                 schedule();
@@ -82,6 +82,8 @@ public class ThreadStatusCell
         this.error = error;
         if (error == null) {
             schedule();
+        } else {
+            update();
         }
     }
 
@@ -174,7 +176,7 @@ public class ThreadStatusCell
             return;
         }
         error = null;
-        if (callback.getChanThread() != null && !callback.getChanThread().isArchived()) {
+        if (callback.getChanThread() != null) {
             callback.onListStatusClicked();
         }
         update();

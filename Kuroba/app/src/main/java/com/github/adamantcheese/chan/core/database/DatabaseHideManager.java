@@ -1,7 +1,5 @@
 package com.github.adamantcheese.chan.core.database;
 
-import android.annotation.SuppressLint;
-
 import androidx.annotation.Nullable;
 
 import com.github.adamantcheese.chan.core.model.Post;
@@ -45,7 +43,6 @@ public class DatabaseHideManager {
                 postNoList.add(post.no);
             }
 
-            @SuppressLint("UseSparseArrays")
             Map<Integer, Post> postsFastLookupMap = new LinkedHashMap<>();
             for (Post post : posts) {
                 postsFastLookupMap.put(post.no, post);
@@ -170,7 +167,6 @@ public class DatabaseHideManager {
                 .eq("board", board)
                 .query());
 
-        @SuppressLint("UseSparseArrays")
         Map<Integer, PostHide> hiddenMap = new HashMap<>();
 
         for (PostHide postHide : hiddenInDatabase) {
@@ -248,7 +244,7 @@ public class DatabaseHideManager {
         return new Post.Builder().board(childPost.board)
                 .posterId(childPost.id)
                 .opId(childPost.opId)
-                .id(childPost.no)
+                .no(childPost.no)
                 .op(childPost.isOP)
                 .replies(childPost.getReplies())
                 .images(childPost.getImagesCount())

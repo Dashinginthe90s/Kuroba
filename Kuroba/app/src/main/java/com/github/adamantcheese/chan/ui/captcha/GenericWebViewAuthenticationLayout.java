@@ -46,7 +46,7 @@ public class GenericWebViewAuthenticationLayout
     private AuthenticationLayoutCallback callback;
     private SiteAuthentication authentication;
     private boolean resettingFromFoundText = false;
-    private boolean isAutoReply = true;
+    private final boolean isAutoReply = true;
 
     @Inject
     CaptchaHolder captchaHolder;
@@ -66,7 +66,7 @@ public class GenericWebViewAuthenticationLayout
         setFocusableInTouchMode(true);
     }
 
-    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    @SuppressLint("SetJavaScriptEnabled")
     @Override
     public void initialize(Site site, AuthenticationLayoutCallback callback, boolean ignored) {
         this.callback = callback;

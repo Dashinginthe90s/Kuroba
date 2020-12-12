@@ -44,6 +44,7 @@ import com.github.adamantcheese.chan.core.site.SiteActions;
 import com.github.adamantcheese.chan.core.site.SiteAuthentication;
 import com.github.adamantcheese.chan.core.site.http.Reply;
 import com.github.adamantcheese.chan.core.site.http.ReplyResponse;
+import com.github.adamantcheese.chan.core.site.parser.CommentParser;
 import com.github.adamantcheese.chan.core.site.sites.chan4.Chan4;
 import com.github.adamantcheese.chan.ui.captcha.AuthenticationLayoutCallback;
 import com.github.adamantcheese.chan.ui.captcha.AuthenticationLayoutInterface;
@@ -61,10 +62,10 @@ import java.util.regex.Pattern;
 import static com.github.adamantcheese.chan.Chan.instance;
 import static com.github.adamantcheese.chan.core.site.Site.BoardFeature.POSTING_IMAGE;
 import static com.github.adamantcheese.chan.core.site.Site.BoardFeature.POSTING_SPOILER;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
 import static com.github.adamantcheese.chan.utils.PostUtils.getReadableFileSize;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -77,10 +78,10 @@ public class ReplyPresenter
         LOADING
     }
 
-    private Context context;
+    private final Context context;
     private static final Pattern QUOTE_PATTERN = Pattern.compile(">>\\d+");
 
-    private ReplyPresenterCallback callback;
+    private final ReplyPresenterCallback callback;
     private Loadable loadable;
     private Reply draft;
 
@@ -108,6 +109,9 @@ public class ReplyPresenter
         callback.enableImageAttach(canPostImages());
 
         switchPage(Page.INPUT);
+
+        callback.openPostOptions(ChanSettings.alwaysShowPostOptions.get());
+        callback.openSubject(ChanSettings.alwaysShowPostOptions.get() && loadable.isCatalogMode());
     }
 
     public void unbindLoadable() {
@@ -153,15 +157,12 @@ public class ReplyPresenter
     public void onMoreClicked() {
         moreOpen = !moreOpen;
         callback.setExpanded(moreOpen);
-        callback.openNameOptions(moreOpen);
-        if (!loadable.isThreadMode()) {
-            callback.openSubject(moreOpen);
+        callback.openPostOptions(moreOpen);
+        if (loadable.isCatalogMode()) {
+            callback.openSubject(moreOpen || ChanSettings.alwaysShowPostOptions.get());
         }
         if (previewOpen) {
-            callback.openFileName(moreOpen);
-            if (loadable.board.spoilers) {
-                callback.openSpoiler(moreOpen, false);
-            }
+            callback.openPreview(draft.file != null, draft.file);
         }
         boolean is4chan = loadable.site instanceof Chan4;
         callback.openCommentQuoteButton(moreOpen);
@@ -194,12 +195,6 @@ public class ReplyPresenter
                 callback.openPreview(false, null);
                 draft.file = null;
                 draft.fileName = "";
-                if (moreOpen) {
-                    callback.openFileName(false);
-                    if (loadable.board.spoilers) {
-                        callback.openSpoiler(false, true);
-                    }
-                }
                 previewOpen = false;
             } else {
                 pickingFile = true;
@@ -271,7 +266,7 @@ public class ReplyPresenter
                     Post fakeOP = new Post.Builder().subject(originatingLoadable.draft.subject)
                             .comment(originatingLoadable.draft.comment)
                             .board(originatingLoadable.board)
-                            .id(replyResponse.postNo)
+                            .no(replyResponse.postNo)
                             .opId(replyResponse.postNo)
                             .setUnixTimestampSeconds(System.currentTimeMillis() / 1000L)
                             .build();
@@ -286,7 +281,6 @@ public class ReplyPresenter
             );
             DatabaseUtils.runTaskAsync(instance(DatabaseSavedReplyManager.class).saveReply(savedReply));
 
-            closeAll();
             highlightQuotes();
 
             originatingLoadable.draft.reset(true);
@@ -303,7 +297,7 @@ public class ReplyPresenter
 
             final String bannedString = "banned";
             int bannedIndex = TextUtils.indexOf(errorMessage, bannedString);
-            if (bannedIndex > 0 && replyResponse.originatingLoadable.site.endpoints().banned() != null) {
+            if (bannedIndex >= 0 && replyResponse.originatingLoadable.site.endpoints().banned() != null) {
                 errorMessage.setSpan(new ClickableSpan() {
                     @Override
                     public void onClick(@NonNull View widget) {
@@ -401,15 +395,13 @@ public class ReplyPresenter
         highlightQuotes();
     }
 
-    public void filenameNewClicked(boolean showToast) {
+    public void filenameNewClicked() {
         if (draft == null) return;
         String currentExt = StringUtils.extractFileNameExtension(draft.fileName);
         currentExt = (currentExt == null) ? "" : "." + currentExt;
         draft.fileName = System.currentTimeMillis() + currentExt;
         callback.loadDraftIntoViews(draft);
-        if (showToast) {
-            showToast(context, "Filename changed.");
-        }
+        showToast(context, "Filename changed.");
     }
 
     public void quote(Post post, boolean withText) {
@@ -436,6 +428,7 @@ public class ReplyPresenter
         }
 
         if (textQuote != null) {
+            textQuote = textQuote.replace(CommentParser.EXIF_INFO_STRING, "").trim();
             String[] lines = textQuote.split("\n+");
             // matches for >>123, >>123 (text), >>>/fit/123
             final Pattern quotePattern = Pattern.compile("^>>(>/[a-z0-9]+/)?\\d+.*$");
@@ -483,13 +476,14 @@ public class ReplyPresenter
         }
     }
 
-    private void closeAll() {
+    public void closeAll() {
         moreOpen = false;
         previewOpen = false;
         selectedQuote = -1;
         callback.openMessage(null);
         callback.setExpanded(false);
-        callback.openSubject(false);
+        callback.openSubject(
+                loadable != null && (ChanSettings.alwaysShowPostOptions.get() && loadable.isCatalogMode()));
         callback.openFlag(false);
         callback.openCommentQuoteButton(false);
         callback.openCommentSpoilerButton(false);
@@ -497,9 +491,7 @@ public class ReplyPresenter
         callback.openCommentEqnButton(false);
         callback.openCommentMathButton(false);
         callback.openCommentSJISButton(false);
-        callback.openNameOptions(false);
-        callback.openFileName(false);
-        callback.openSpoiler(false, true);
+        callback.openPostOptions(ChanSettings.alwaysShowPostOptions.get());
         callback.openPreview(false, null);
         callback.openPreviewMessage(false, null);
         callback.destroyCurrentAuthentication();
@@ -577,12 +569,6 @@ public class ReplyPresenter
 
     private void showPreview(String name, File file) {
         callback.openPreview(true, file);
-        if (moreOpen) {
-            callback.openFileName(true);
-            if (loadable.board.spoilers) {
-                callback.openSpoiler(true, false);
-            }
-        }
         callback.setFileName(name);
         previewOpen = true;
 
@@ -640,7 +626,7 @@ public class ReplyPresenter
 
         void setExpanded(boolean expanded);
 
-        void openNameOptions(boolean open);
+        void openPostOptions(boolean open);
 
         void openSubject(boolean open);
 
@@ -658,8 +644,6 @@ public class ReplyPresenter
 
         void openCommentSJISButton(boolean open);
 
-        void openFileName(boolean open);
-
         void setFileName(String fileName);
 
         void updateCommentCount(int count, int maxCount, boolean over);
@@ -667,8 +651,6 @@ public class ReplyPresenter
         void openPreview(boolean show, File previewFile);
 
         void openPreviewMessage(boolean show, String message);
-
-        void openSpoiler(boolean show, boolean setUnchecked);
 
         void highlightPostNo(int no);
 

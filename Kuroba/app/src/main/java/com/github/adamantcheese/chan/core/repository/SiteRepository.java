@@ -31,9 +31,10 @@ import static com.github.adamantcheese.chan.Chan.instance;
 import static com.github.adamantcheese.chan.core.site.SiteRegistry.SITE_CLASSES;
 
 public class SiteRepository {
-    private DatabaseSiteManager databaseSiteManager;
-    private Gson gson;
-    private Sites sitesObservable = new Sites();
+    private boolean initialized = false;
+    private final DatabaseSiteManager databaseSiteManager;
+    private final Gson gson;
+    private final Sites sitesObservable = new Sites();
 
     public Site forId(int id) {
         return sitesObservable.forId(id);
@@ -80,6 +81,8 @@ public class SiteRepository {
     }
 
     public void initialize() {
+        if (initialized) return;
+        initialized = true;
         List<Site> sites = new ArrayList<>();
 
         List<SiteModel> models = DatabaseUtils.runTask(databaseSiteManager.getAll());
@@ -88,7 +91,7 @@ public class SiteRepository {
             SiteConfigSettingsHolder holder;
             try {
                 holder = instantiateSiteFromModel(siteModel);
-            } catch (IllegalArgumentException e) {
+            } catch (Exception e) {
                 Logger.e(this, "instantiateSiteFromModel", e);
                 break;
             }
@@ -154,7 +157,7 @@ public class SiteRepository {
         try {
             return clazz.newInstance();
         } catch (InstantiationException | IllegalAccessException e) {
-            throw new IllegalArgumentException();
+            throw new RuntimeException(e);
         }
     }
 
@@ -215,9 +218,7 @@ public class SiteRepository {
             Map<Integer, Integer> ordering = getOrdering();
 
             List<Site> ordered = new ArrayList<>(sites);
-            //noinspection ConstantConditions
-            Collections.sort(
-                    ordered,
+            Collections.sort(ordered,
                     (lhs, rhs) -> lhs == null || rhs == null ? 0 : ordering.get(lhs.id()) - ordering.get(rhs.id())
             );
 

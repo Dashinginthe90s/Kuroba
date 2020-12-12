@@ -17,7 +17,6 @@
 package com.github.adamantcheese.chan.ui.controller;
 
 import android.Manifest;
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.os.Environment;
@@ -39,7 +38,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import java.io.File;
 
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class SaveLocationController
@@ -50,7 +49,7 @@ public class SaveLocationController
     private FloatingActionButton addButton;
     private RuntimePermissionsHelper runtimePermissionsHelper;
     private FileWatcher fileWatcher;
-    private SaveLocationControllerCallback callback;
+    private final SaveLocationControllerCallback callback;
 
     public SaveLocationController(Context context, SaveLocationControllerCallback callback) {
         super(context);
@@ -86,7 +85,6 @@ public class SaveLocationController
             onDirectoryChosen();
             navigationController.popController();
         } else if (v == addButton) {
-            @SuppressLint("InflateParams")
             final NewFolderLayout dialogView = (NewFolderLayout) inflate(context, R.layout.layout_folder_add, null);
 
             new AlertDialog.Builder(context).setView(dialogView)

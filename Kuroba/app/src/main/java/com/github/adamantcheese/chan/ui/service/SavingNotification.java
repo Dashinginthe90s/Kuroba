@@ -41,8 +41,8 @@ public class SavingNotification
     public static final String TOTAL_TASKS_KEY = "total_tasks";
     private static final String CANCEL_KEY = "cancel";
 
-    private static String NOTIFICATION_ID_STR = "3";
-    private int NOTIFICATION_ID = 3;
+    private static final String NOTIFICATION_ID_STR = "3";
+    private final int NOTIFICATION_ID = 3;
 
     public static void setupChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -97,6 +97,11 @@ public class SavingNotification
                 return START_STICKY;
             }
         }
+        startForeground(NOTIFICATION_ID,
+                new NotificationCompat.Builder(this, NOTIFICATION_ID_STR).setSmallIcon(R.drawable.ic_stat_notify)
+                        .setOngoing(true)
+                        .build()
+        );
         stopSelf();
         return START_NOT_STICKY;
     }

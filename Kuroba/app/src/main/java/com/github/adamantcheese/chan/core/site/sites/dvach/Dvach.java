@@ -228,7 +228,6 @@ public class Dvach
         });
 
         setApi(new DvachApi(this));
-
         setParser(new DvachCommentParser());
     }
 }

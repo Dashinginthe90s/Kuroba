@@ -35,7 +35,6 @@ import com.github.adamantcheese.chan.core.cache.FileCacheListener;
 import com.github.adamantcheese.chan.core.cache.FileCacheV2;
 import com.github.adamantcheese.chan.core.cache.downloader.CancelableDownload;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
-import com.github.adamantcheese.chan.ui.widget.CancellableToast;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.IOUtils;
 import com.github.adamantcheese.chan.utils.Logger;
@@ -55,10 +54,10 @@ import javax.inject.Inject;
 import okhttp3.HttpUrl;
 
 import static com.github.adamantcheese.chan.Chan.inject;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getClipboardContent;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
 
 public class ImagePickDelegate {
     private static final int IMAGE_PICK_RESULT = 2;
@@ -70,7 +69,7 @@ public class ImagePickDelegate {
     @Inject
     FileCacheV2 fileCacheV2;
 
-    private Activity activity;
+    private final Activity activity;
     private ImagePickCallback callback;
     private Uri uri;
     private String fileName = "";
@@ -137,14 +136,13 @@ public class ImagePickDelegate {
     }
 
     private void pickRemoteFile(ImagePickCallback callback) {
-        CancellableToast toast = new CancellableToast();
-        toast.showToast(activity, R.string.image_url_get_attempt);
+        showToast(activity, R.string.image_url_get_attempt);
         HttpUrl clipboardURL;
         try {
             //this is converted to a string again later, but this is an easy way of catching if the clipboard item is a URL
-            clipboardURL = HttpUrl.get(getClipboardContent());
+            clipboardURL = HttpUrl.get(getClipboardContent().toString());
         } catch (Exception exception) {
-            toast.showToast(activity, getString(R.string.image_url_get_failed, exception.getMessage()));
+            showToast(activity, getString(R.string.image_url_get_failed, exception.getMessage()));
             callback.onFilePickError(true);
             reset();
 
@@ -160,7 +158,7 @@ public class ImagePickDelegate {
         cancelableDownload = fileCacheV2.enqueueNormalDownloadFileRequest(clipboardURL, new FileCacheListener() {
             @Override
             public void onSuccess(RawFile file, boolean immediate) {
-                toast.showToast(activity, R.string.image_url_get_success);
+                showToast(activity, R.string.image_url_get_success);
                 Uri imageURL = Uri.parse(finalClipboardURL.toString());
                 callback.onFilePicked(imageURL.getLastPathSegment(), new File(file.getFullPath()));
             }
@@ -172,9 +170,7 @@ public class ImagePickDelegate {
 
             @Override
             public void onFail(Exception exception) {
-                String message = getString(R.string.image_url_get_failed, exception.getMessage());
-
-                toast.showToast(activity, message);
+                showToast(activity, getString(R.string.image_url_get_failed, exception.getMessage()));
                 callback.onFilePickError(true);
             }
 
@@ -213,7 +209,7 @@ public class ImagePickDelegate {
                     fileName = TextUtils.isEmpty(fileName) ? DEFAULT_FILE_NAME : fileName;
                 }
 
-                BackgroundUtils.backgroundService.execute(this::doFilePicked);
+                BackgroundUtils.runOnBackgroundThread(this::doFilePicked);
                 ok = true;
             }
         } else if (resultCode == Activity.RESULT_CANCELED) {

@@ -21,7 +21,6 @@ import com.github.adamantcheese.chan.core.site.parser.ChanReader;
 import com.github.adamantcheese.chan.core.site.parser.ChanReaderProcessingQueue;
 import com.github.adamantcheese.chan.core.site.parser.CommentParser;
 import com.github.adamantcheese.chan.core.site.parser.PostParser;
-import com.github.adamantcheese.chan.utils.AndroidUtils;
 
 import java.util.Collections;
 import java.util.List;
@@ -30,8 +29,11 @@ import java.util.Map;
 import okhttp3.HttpUrl;
 import okhttp3.Request;
 
+import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
+
 public class DummySite
         implements Site {
+
     @Override
     public void initialize(int id, JsonSettings userSettings) {}
 
@@ -40,7 +42,7 @@ public class DummySite
 
     @Override
     public int id() {
-        return Integer.MIN_VALUE;
+        return -1;
     }
 
     @Override
@@ -50,8 +52,10 @@ public class DummySite
 
     @Override
     public SiteIcon icon() {
-        return SiteIcon.fromDrawable(new BitmapDrawable(BitmapFactory.decodeResource(AndroidUtils.getAppContext()
-                .getResources(), R.drawable.trash_icon)));
+        return SiteIcon.fromDrawable(new BitmapDrawable(
+                getAppContext().getResources(),
+                BitmapFactory.decodeResource(getAppContext().getResources(), R.drawable.trash_icon)
+        ));
     }
 
     @Override
@@ -194,11 +198,11 @@ public class DummySite
     @Override
     public ChanReader chanReader() {
         return new ChanReader() {
-            private PostParser postParser = new DefaultPostParser(new CommentParser().addDefaultRules());
+            private final PostParser postParser = new DefaultPostParser(new CommentParser().addDefaultRules());
 
             @Override
             public PostParser getParser() {
-                return (theme, builder, filters, callback) -> postParser.parse(theme, builder, filters, callback);
+                return postParser;
             }
 
             @Override
@@ -269,6 +273,6 @@ public class DummySite
     @NonNull
     @Override
     public ChunkDownloaderSiteProperties getChunkDownloaderSiteProperties() {
-        return new ChunkDownloaderSiteProperties(false, false);
+        return new ChunkDownloaderSiteProperties(Integer.MAX_VALUE, false, false);
     }
 }

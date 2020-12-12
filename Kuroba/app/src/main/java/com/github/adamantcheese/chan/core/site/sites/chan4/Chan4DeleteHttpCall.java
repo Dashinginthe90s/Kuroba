@@ -26,17 +26,12 @@ import com.github.adamantcheese.chan.core.site.http.ProgressRequestBody;
 
 import org.jsoup.Jsoup;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import okhttp3.FormBody;
 import okhttp3.Request;
 import okhttp3.Response;
 
 public class Chan4DeleteHttpCall
         extends HttpCall {
-    private static final Pattern ERROR_MESSAGE = Pattern.compile("\"errmsg\"[^>]*>(.*?)</span");
-
     private final DeleteRequest deleteRequest;
     public final DeleteResponse deleteResponse = new DeleteResponse();
 
@@ -63,9 +58,8 @@ public class Chan4DeleteHttpCall
 
     @Override
     public void process(Response response, String result) {
-        Matcher errorMessageMatcher = ERROR_MESSAGE.matcher(result);
-        if (errorMessageMatcher.find()) {
-            deleteResponse.errorMessage = Jsoup.parse(errorMessageMatcher.group(1)).body().ownText();
+        if (result.contains("errmsg")) {
+            deleteResponse.errorMessage = Jsoup.parse(result).select("#errmsg").html();
         } else {
             deleteResponse.deleted = true;
         }

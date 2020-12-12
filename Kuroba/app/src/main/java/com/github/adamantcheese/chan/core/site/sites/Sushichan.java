@@ -81,6 +81,7 @@ public class Sushichan
                 Board.fromSiteNameCode(this, "enjoyable sounds", "tunes"),
                 Board.fromSiteNameCode(this, "arts & literature", "culture"),
                 Board.fromSiteNameCode(this, "technology", "silicon"),
+                Board.fromSiteNameCode(this, "Japan / Otaku / Anime", "otaku"),
                 Board.fromSiteNameCode(this, "site meta-discussion", "yakuza"),
                 Board.fromSiteNameCode(this, "internet death cult", "hell"),
                 Board.fromSiteNameCode(this, "dat ecchi & hentai goodness", "lewd")
@@ -104,6 +105,6 @@ public class Sushichan
     @NonNull
     @Override
     public ChunkDownloaderSiteProperties getChunkDownloaderSiteProperties() {
-        return new ChunkDownloaderSiteProperties(true, true);
+        return new ChunkDownloaderSiteProperties(Integer.MAX_VALUE, true, true);
     }
 }

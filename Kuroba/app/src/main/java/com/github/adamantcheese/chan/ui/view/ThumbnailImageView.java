@@ -16,8 +16,8 @@ public class ThumbnailImageView
         extends AppCompatImageView {
 
     private PostImage.Type type = PostImage.Type.STATIC;
-    private Drawable playIcon;
-    private Rect bounds = new Rect();
+    private final Drawable playIcon;
+    private final Rect bounds = new Rect();
 
     public ThumbnailImageView(Context context) {
         this(context, null);
@@ -29,7 +29,7 @@ public class ThumbnailImageView
 
     public ThumbnailImageView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
-        playIcon = context.getDrawable(R.drawable.ic_play_circle_outline_white_24dp);
+        playIcon = context.getDrawable(R.drawable.ic_fluent_play_circle_24_regular);
     }
 
     public void setType(PostImage.Type type) {

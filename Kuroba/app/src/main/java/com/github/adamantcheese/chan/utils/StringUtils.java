@@ -1,5 +1,8 @@
 package com.github.adamantcheese.chan.utils;
 
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.TextUtils;
 import android.text.format.DateUtils;
 import android.util.Base64;
 
@@ -7,6 +10,8 @@ import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.github.adamantcheese.chan.core.manager.FilterEngine;
+import com.github.adamantcheese.chan.ui.text.SearchHighlightSpan;
 import com.vdurmont.emoji.EmojiParser;
 
 import java.text.DateFormat;
@@ -113,9 +118,9 @@ public class StringUtils {
         return false;
     }
 
-    public static boolean containsAny(String s, List<String> contains) {
-        for (String contain : contains) {
-            if (s.contains(contain)) {
+    public static boolean containsAny(CharSequence s, List<CharSequence> contains) {
+        for (CharSequence contain : contains) {
+            if (TextUtils.indexOf(s, contain) >= 0) {
                 return true;
             }
         }
@@ -214,9 +219,9 @@ public class StringUtils {
                 seconds = Integer.parseInt(m.group(3));
             } catch (Exception ignored) {}
 
-            String secondString = seconds < 10 ? "0" + seconds : "" + seconds;
+            String secondString = (seconds < 10 ? "0" : "") + seconds;
             if (hours > 0) {
-                String minuteString = minutes < 10 ? "0" + minutes : "" + minutes;
+                String minuteString = (minutes < 10 ? "0" : "") + minutes;
                 ret = hours + ":" + minuteString + ":" + secondString;
             } else {
                 ret = minutes + ":" + secondString;
@@ -224,7 +229,6 @@ public class StringUtils {
         } else if ("P0D".equals(ISO8601Duration)) {
             ret = "LIVE";
         } else {
-            //badly formatted time from youtube's API?
             ret = "??:??";
         }
 
@@ -235,5 +239,50 @@ public class StringUtils {
         if (Double.isNaN(elapsedSeconds) || Double.isInfinite(elapsedSeconds) || elapsedSeconds == 0.0) return "?:??";
         String out = DateUtils.formatElapsedTime(Math.round(elapsedSeconds));
         return "[" + ((out.charAt(0) == '0' && Character.isDigit(out.charAt(1))) ? out.substring(1) : out) + "]";
+    }
+
+    public static SpannableStringBuilder applySearchSpans(CharSequence source, String searchQuery) {
+        SpannableStringBuilder commentCopy = new SpannableStringBuilder(source);
+        if (!TextUtils.isEmpty(searchQuery)) {
+            Pattern search = Pattern.compile(FilterEngine.escapeRegex(searchQuery), Pattern.CASE_INSENSITIVE);
+            Matcher searchMatch = search.matcher(commentCopy);
+            // apply new spans
+            while (searchMatch.find()) {
+                commentCopy.setSpan(
+                        new SearchHighlightSpan(),
+                        searchMatch.toMatchResult().start(),
+                        searchMatch.toMatchResult().end(),
+                        Spanned.SPAN_INCLUSIVE_EXCLUSIVE
+                );
+            }
+        }
+        return commentCopy;
+    }
+
+    // Copied from Apache Commons Lang 3, modified for SpannableStringBuilders
+    public static CharSequence chomp(final SpannableStringBuilder str) {
+        if (str == null || str.length() == 0) {
+            return str;
+        }
+
+        if (str.length() == 1) {
+            final char ch = str.charAt(0);
+            if (ch == '\r' || ch == '\n') {
+                return new SpannableStringBuilder("");
+            }
+            return str;
+        }
+
+        int lastIdx = str.length() - 1;
+        final char last = str.charAt(lastIdx);
+
+        if (last == '\n') {
+            if (str.charAt(lastIdx - 1) == '\r') {
+                lastIdx--;
+            }
+        } else if (last != '\r') {
+            lastIdx++;
+        }
+        return str.subSequence(0, lastIdx);
     }
 }

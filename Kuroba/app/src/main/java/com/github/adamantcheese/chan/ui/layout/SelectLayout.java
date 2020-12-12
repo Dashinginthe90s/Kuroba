@@ -36,13 +36,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import static com.github.adamantcheese.chan.utils.StringUtils.applySearchSpans;
+
 public class SelectLayout<T>
         extends LinearLayout
         implements SearchLayout.SearchLayoutCallback, View.OnClickListener {
     private RecyclerView recyclerView;
     private Button checkAllButton;
 
-    private List<SelectItem<T>> items = new ArrayList<>();
+    private final List<SelectItem<T>> items = new ArrayList<>();
     private SelectAdapter adapter;
     private boolean allChecked = false;
 
@@ -62,6 +64,9 @@ public class SelectLayout<T>
     public void onSearchEntered(String entered) {
         adapter.search(entered);
     }
+
+    @Override
+    public void onClearPressedWhenEmpty() {}
 
     @Override
     protected void onFinishInflate() {
@@ -122,8 +127,8 @@ public class SelectLayout<T>
 
     private class SelectAdapter
             extends RecyclerView.Adapter<BoardSelectViewHolder> {
-        private List<SelectItem<T>> sourceList = new ArrayList<>();
-        private List<SelectItem<T>> displayList = new ArrayList<>();
+        private final List<SelectItem<T>> sourceList = new ArrayList<>();
+        private final List<SelectItem<T>> displayList = new ArrayList<>();
         private String searchQuery;
 
         public SelectAdapter() {
@@ -143,10 +148,22 @@ public class SelectLayout<T>
         public void onBindViewHolder(BoardSelectViewHolder holder, int position) {
             SelectItem<T> item = displayList.get(position);
             holder.checkBox.setChecked(item.checked);
-            holder.text.setText(item.name);
+
+            //noinspection StringEquality this is meant to be a reference comparison, not a string comparison
+            if (item.searchTerm == item.name) {
+                holder.text.setText(applySearchSpans(item.name, searchQuery));
+            } else {
+                holder.text.setText(item.name);
+            }
+
             if (item.description != null) {
                 holder.description.setVisibility(VISIBLE);
-                holder.description.setText(item.description);
+                //noinspection StringEquality this is meant to be a reference comparison, not a string comparison
+                if (item.searchTerm == item.description) {
+                    holder.description.setText(applySearchSpans(item.description, searchQuery));
+                } else {
+                    holder.description.setText(item.description);
+                }
             } else {
                 holder.description.setVisibility(GONE);
             }
@@ -194,9 +211,9 @@ public class SelectLayout<T>
     private class BoardSelectViewHolder
             extends RecyclerView.ViewHolder
             implements CompoundButton.OnCheckedChangeListener, OnClickListener {
-        private CheckBox checkBox;
-        private TextView text;
-        private TextView description;
+        private final CheckBox checkBox;
+        private final TextView text;
+        private final TextView description;
 
         public BoardSelectViewHolder(View itemView) {
             super(itemView);

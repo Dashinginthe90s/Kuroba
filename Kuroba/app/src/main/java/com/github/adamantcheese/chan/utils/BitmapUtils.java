@@ -4,7 +4,9 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.CompressFormat;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Matrix;
+import android.media.MediaMetadataRetriever;
 
 import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
@@ -12,7 +14,9 @@ import androidx.annotation.Nullable;
 import androidx.core.util.Pair;
 import androidx.exifinterface.media.ExifInterface;
 
+import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.presenter.ImageReencodingPresenter;
+import com.github.adamantcheese.chan.core.repository.BitmapRepository;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -21,12 +25,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.util.Arrays;
-import java.util.Random;
+
+import kotlin.random.Random;
 
 import static android.graphics.Bitmap.CompressFormat.JPEG;
 import static android.graphics.Bitmap.CompressFormat.PNG;
 import static android.graphics.Bitmap.CompressFormat.WEBP;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.getRes;
 
 public class BitmapUtils {
     private static final String TAG = "BitmapUtils";
@@ -40,8 +46,7 @@ public class BitmapUtils {
     private static final byte[] WEBP_HEADER1 = new byte[]{'R', 'I', 'F', 'F'};
     private static final byte[] WEBP_HEADER2 = new byte[]{'W', 'E', 'B', 'P'};
 
-    private static final Random random = new Random();
-    private static BitmapFactory.Options options = new BitmapFactory.Options();
+    private static final BitmapFactory.Options options = new BitmapFactory.Options();
 
     static {
         options.inMutable = true;
@@ -60,8 +65,8 @@ public class BitmapUtils {
 
         //slightly change one pixel of the image to change it's checksum
         if (imageOptions.changeImageChecksum) {
-            int randomX = Math.abs(random.nextInt()) % bitmap.getWidth();
-            int randomY = Math.abs(random.nextInt()) % bitmap.getHeight();
+            int randomX = Math.abs(Random.Default.nextInt()) % bitmap.getWidth();
+            int randomY = Math.abs(Random.Default.nextInt()) % bitmap.getHeight();
 
             // one pixel is enough to change the checksum of an image
             int pixel = bitmap.getPixel(randomX, randomY);
@@ -196,7 +201,7 @@ public class BitmapUtils {
     public static Bitmap decode(InputStream data, int maxWidth, int maxHeight) {
         // If we have to resize this image, first get the natural bounds.
         Bitmap tempBitmap = BitmapFactory.decodeStream(data);
-        if (tempBitmap == null) return null;
+        if (tempBitmap == null || options.outWidth == -1 || options.outHeight == -1) return null;
         int actualWidth = tempBitmap.getWidth();
         int actualHeight = tempBitmap.getHeight();
 
@@ -245,5 +250,58 @@ public class BitmapUtils {
 
     public static Bitmap decode(Context c, @DrawableRes int resId) {
         return BitmapFactory.decodeResource(c.getResources(), resId);
+    }
+
+    public static Bitmap decodeFilePreviewImage(
+            final File file, int maxWidth, int maxHeight, final ImageDecoderCallback callback, boolean addAudioIcon
+    ) {
+        if (callback != null) {
+            BackgroundUtils.runOnBackgroundThread(() -> {
+                Bitmap result = decodeFilePreviewImage(file, maxWidth, maxHeight, addAudioIcon);
+                BackgroundUtils.runOnMainThread(() -> callback.onImageBitmap(result));
+            });
+            return null;
+        } else {
+            return decodeFilePreviewImage(file, maxWidth, maxHeight, addAudioIcon);
+        }
+    }
+
+    private static Bitmap decodeFilePreviewImage(final File file, int maxWidth, int maxHeight, boolean addAudioIcon) {
+        Bitmap result = BitmapRepository.error;
+        try {
+            result = decodeFile(file, maxWidth, maxHeight);
+        } catch (Exception ignored) {
+        }
+        try {
+            MediaMetadataRetriever video = new MediaMetadataRetriever();
+            video.setDataSource(file.getAbsolutePath());
+            Bitmap frameBitmap = video.getFrameAtTime();
+            boolean hasAudio = "yes".equals(video.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO));
+            if (hasAudio && frameBitmap != null && addAudioIcon) {
+                Bitmap audioIconBitmap = BitmapFactory.decodeResource(getRes(), R.drawable.ic_fluent_speaker_24_filled);
+                Bitmap audioBitmap = Bitmap.createScaledBitmap(audioIconBitmap,
+                        audioIconBitmap.getWidth() * 3,
+                        audioIconBitmap.getHeight() * 3,
+                        true
+                );
+                result = Bitmap.createBitmap(frameBitmap.getWidth(), frameBitmap.getHeight(), frameBitmap.getConfig());
+                Canvas temp = new Canvas(result);
+                temp.drawBitmap(frameBitmap, new Matrix(), null);
+                temp.drawBitmap(audioBitmap,
+                        frameBitmap.getWidth() - audioBitmap.getWidth(),
+                        frameBitmap.getHeight() - audioBitmap.getHeight(),
+                        null
+                );
+            } else {
+                result = frameBitmap;
+            }
+        } catch (Exception ignored) {
+        }
+
+        return result;
+    }
+
+    public interface ImageDecoderCallback {
+        void onImageBitmap(Bitmap bitmap);
     }
 }

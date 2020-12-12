@@ -11,29 +11,22 @@ import androidx.appcompat.app.AlertDialog;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
-import com.github.adamantcheese.chan.core.settings.ChanSettings.ConcurrentFileDownloadingChunks;
 import com.github.adamantcheese.chan.features.gesture_editor.Android10GesturesExclusionZonesHolder;
 import com.github.adamantcheese.chan.features.gesture_editor.AttachSide;
 import com.github.adamantcheese.chan.features.gesture_editor.ExclusionZone;
 import com.github.adamantcheese.chan.ui.controller.AdjustAndroid10GestureZonesController;
 import com.github.adamantcheese.chan.ui.settings.BooleanSettingView;
 import com.github.adamantcheese.chan.ui.settings.LinkSettingView;
-import com.github.adamantcheese.chan.ui.settings.ListSettingView;
-import com.github.adamantcheese.chan.ui.settings.ListSettingView.Item;
-import com.github.adamantcheese.chan.ui.settings.SettingView;
 import com.github.adamantcheese.chan.ui.settings.SettingsGroup;
 
 import org.jetbrains.annotations.Nullable;
-
-import java.util.ArrayList;
-import java.util.List;
 
 import javax.inject.Inject;
 
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getScreenOrientation;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.isAndroid10;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.JavaUtils.in;
 
 public class ExperimentalSettingsController
@@ -74,10 +67,6 @@ public class ExperimentalSettingsController
 
         navigation.setTitle(R.string.settings_experimental_settings_title);
 
-        setupLayout();
-        populatePreferences();
-        buildPreferences();
-
         if (!isAndroid10()) {
             resetExclusionZonesSetting.setEnabled(false);
             gestureExclusionZonesSetting.setEnabled(false);
@@ -85,14 +74,9 @@ public class ExperimentalSettingsController
     }
 
     @Override
-    public void onPreferenceChange(SettingView item) {
-        super.onPreferenceChange(item);
-    }
-
-    private void populatePreferences() {
+    protected void populatePreferences() {
         SettingsGroup group = new SettingsGroup(getString(R.string.experimental_settings_group));
 
-        setupConcurrentFileDownloadingChunksSetting(group);
         setupZonesEditor(group);
         setupZonesResetButton(group);
 
@@ -111,26 +95,6 @@ public class ExperimentalSettingsController
         )));
 
         groups.add(group);
-    }
-
-    private void setupConcurrentFileDownloadingChunksSetting(SettingsGroup group) {
-        List<Item<ConcurrentFileDownloadingChunks>> items = new ArrayList<>();
-
-        for (ConcurrentFileDownloadingChunks setting : ConcurrentFileDownloadingChunks.values()) {
-            items.add(new Item<>(setting.getKey(), setting));
-        }
-
-        requiresRestart.add(group.add(new ListSettingView<ConcurrentFileDownloadingChunks>(
-                this,
-                ChanSettings.concurrentDownloadChunkCount,
-                getString(R.string.settings_concurrent_file_downloading_name),
-                items
-        ) {
-            @Override
-            public String getBottomDescription() {
-                return getString(R.string.settings_concurrent_file_downloading_description) + "\n\n" + selected.name;
-            }
-        }));
     }
 
     private void setupZonesResetButton(SettingsGroup group) {

@@ -16,10 +16,12 @@
  */
 package com.github.adamantcheese.chan.core.manager;
 
+import android.annotation.SuppressLint;
 import android.content.res.AssetManager;
 import android.util.JsonReader;
 
 import com.github.adamantcheese.chan.core.model.orm.Board;
+import com.github.adamantcheese.chan.core.site.AyaseArchive;
 import com.github.adamantcheese.chan.core.site.ExternalSiteArchive;
 import com.github.adamantcheese.chan.core.site.FoolFuukaArchive;
 import com.github.adamantcheese.chan.core.site.sites.chan4.Chan4;
@@ -44,12 +46,25 @@ public class ArchivesManager
         implements ResponseResult<List<ExternalSiteArchive>> {
     private List<ExternalSiteArchive> archivesList;
 
-    private Map<String, Class<? extends ExternalSiteArchive>> jsonMapping = new HashMap<>();
+    private final Map<String, Class<? extends ExternalSiteArchive>> jsonMapping = new HashMap<>();
 
-    public ArchivesManager() {
-        // setup mappings (nothing for fuuka, doesn't have an API)
-        jsonMapping.put("foolfuuka", FoolFuukaArchive.class);
+    @SuppressLint("StaticFieldLeak")
+    private static ArchivesManager instance;
+
+    public static ArchivesManager getInstance() {
+        if (instance == null) {
+            instance = new ArchivesManager();
+        }
+        return instance;
+    }
+
+    private ArchivesManager() {
+        // fuuka does not provide an easy API, and is only used for warosu
         jsonMapping.put("fuuka", null);
+        // foolfuuka is currently the de-facto archiver of choice
+        jsonMapping.put("foolfuuka", FoolFuukaArchive.class);
+        // ayase is a replacement for foolfuuka, but currently has no sites and the implementation throws NotImplementedErrors
+        jsonMapping.put("ayase", AyaseArchive.class);
 
         //setup the archives list from the internal file, populated when you build the application
         AssetManager assetManager = getAppContext().getAssets();
@@ -59,7 +74,7 @@ public class ArchivesManager
                 archivesList = process(reader);
             }
         } catch (Exception e) {
-            Logger.d(this, "Unable to load/parse internal archives list");
+            Logger.d(this, "Unable to load/parse internal archives list", e);
         }
 
         // fresh copy request, in case of updates
@@ -124,11 +139,7 @@ public class ArchivesManager
             reader.endObject();
             Class<? extends ExternalSiteArchive> archiveClass = jsonMapping.get(software);
             if (archiveClass != null) {
-                archives.add((ExternalSiteArchive) archiveClass.getConstructor(String.class,
-                        String.class,
-                        List.class,
-                        boolean.class
-                )
+                archives.add(archiveClass.getConstructor(String.class, String.class, List.class, boolean.class)
                         .newInstance(domain, name, boardCodes, search));
             }
         }

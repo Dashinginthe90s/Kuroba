@@ -1,5 +1,6 @@
 package com.github.adamantcheese.chan.core.cache.downloader
 
+import com.github.adamantcheese.chan.utils.Logger
 import com.github.adamantcheese.chan.utils.StringUtils.maskImageUrl
 import com.github.k1rakishou.fsaf.file.AbstractFile
 import io.reactivex.exceptions.CompositeException
@@ -27,7 +28,7 @@ internal sealed class FileCacheException(message: String) : Exception(message) {
             val path: String,
             val exists: Boolean,
             val isFile: Boolean,
-            val canRead: Boolean
+            canRead: Boolean
     ) : FileCacheException("Could not get input stream, exists = $exists, isFile = $isFile, canRead = $canRead, path = $path")
 
     internal class CouldNotGetOutputStreamException(
@@ -76,12 +77,12 @@ internal fun logErrorsAndExtractErrorMessage(tag: String, prefix: String, error:
         }
 
         val result = sb.toString()
-        logError(tag, result)
+        Logger.e(tag, result)
 
         result
     } else {
         val msg = "$prefix, class = ${error.javaClass.simpleName}, message = ${error.message}"
-        logError(tag, msg)
+        Logger.e(tag, msg)
 
         msg
     }

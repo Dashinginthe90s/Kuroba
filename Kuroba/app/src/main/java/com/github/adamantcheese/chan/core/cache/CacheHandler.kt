@@ -17,7 +17,7 @@
 package com.github.adamantcheese.chan.core.cache
 
 import android.os.Environment
-import android.text.TextUtils
+import com.github.adamantcheese.chan.core.cache.downloader.ConcurrentChunkedFileDownloader
 import com.github.adamantcheese.chan.core.di.AppModule.getCacheDir
 import com.github.adamantcheese.chan.core.settings.ChanSettings
 import com.github.adamantcheese.chan.utils.AndroidUtils
@@ -91,7 +91,7 @@ class CacheHandler(
 
     private fun clearChunksCacheDir() {
         if (trimChunksRunning.compareAndSet(false, true)) {
-            BackgroundUtils.backgroundService.execute {
+            BackgroundUtils.runOnBackgroundThread {
                 try {
                     fileManager.deleteContent(chunksCacheDirFile)
                 } finally {
@@ -299,7 +299,7 @@ class CacheHandler(
                 && now - trimTime > MIN_TRIM_INTERVAL
                 && trimRunning.compareAndSet(false, true)
         ) {
-            BackgroundUtils.backgroundService.execute {
+            BackgroundUtils.runOnBackgroundThread {
                 try {
                     trim()
                 } catch (e: Exception) {
@@ -364,7 +364,7 @@ class CacheHandler(
     private fun deleteCacheFile(fileName: String): Boolean {
         val originalFileName = StringUtils.removeExtensionFromFileName(fileName)
 
-        if (TextUtils.isEmpty(originalFileName)) {
+        if (originalFileName.isEmpty()) {
             Logger.e(TAG, "Couldn't parse original file name, fileName = $fileName")
             return false
         }
@@ -663,8 +663,7 @@ class CacheHandler(
             // Already running. Do not use compareAndSet() here!
             return
         }
-
-        BackgroundUtils.backgroundService.submit { recalculateSize() }
+        BackgroundUtils.runOnBackgroundThread { recalculateSize() }
     }
 
     private fun recalculateSize() {

@@ -121,7 +121,7 @@ public class FutabaChanReader
 
             switch (key) {
                 case "no":
-                    builder.id(reader.nextInt());
+                    builder.no(reader.nextInt());
                     break;
                 /*case "now":
                     post.date = reader.nextString();
@@ -233,7 +233,7 @@ public class FutabaChanReader
         reader.endObject();
 
         // The file from between the other values.
-        if (fileId != null && fileName != null && fileExt != null && !fileDeleted) {
+        if ((fileId != null && fileName != null && fileExt != null) || fileDeleted) {
             // /f/ is a strange case where the actual filename is used for the file on the server
             Map<String, String> args =
                     makeArgument("tim", "f".equals(queue.getLoadable().boardCode) ? fileName : fileId, "ext", fileExt);
@@ -241,13 +241,14 @@ public class FutabaChanReader
                     .thumbnailUrl(endpoints.thumbnailUrl(builder, false, args))
                     .spoilerThumbnailUrl(endpoints.thumbnailUrl(builder, true, args))
                     .imageUrl(endpoints.imageUrl(builder, args))
-                    .filename(Parser.unescapeEntities(fileName, false))
+                    .filename(Parser.unescapeEntities(fileDeleted ? "file_deleted" : fileName, false))
                     .extension(fileExt)
                     .imageWidth(fileWidth)
                     .imageHeight(fileHeight)
                     .spoiler(fileSpoiler)
                     .size(fileSize)
                     .fileHash(fileHash, true)
+                    .deleted(fileDeleted)
                     .build();
             // Insert it at the beginning.
             files.add(0, image);
@@ -268,9 +269,9 @@ public class FutabaChanReader
             queue.setOp(op);
         }
 
-        Post cached = queue.getCachedPost(builder.id);
+        Post cached = queue.getCachedPost(builder.no);
         if (cached != null) {
-            // Id is known, use the cached post object.
+            // Post no is known, use the cached post object.
             queue.addForReuse(cached);
             return;
         }

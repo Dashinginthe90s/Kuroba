@@ -18,7 +18,6 @@ package com.github.adamantcheese.chan.ui.layout;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
-import android.annotation.SuppressLint;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.os.Build;
@@ -80,7 +79,7 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.hideKeyboard;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.removeFromParentView;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 /**
  * Wrapper around ThreadListLayout, so that it cleanly manages between a loading state
@@ -117,7 +116,7 @@ public class ThreadLayout
     private Button errorRetryButton;
     private PostPopupHelper postPopupHelper;
     private RemovedPostsHelper removedPostsHelper;
-    private Visible visible;
+    private Visible visible = Visible.EMPTY;
     private ProgressDialog deletingDialog;
     private boolean replyButtonEnabled;
     private boolean showingReplyButton = false;
@@ -184,7 +183,7 @@ public class ThreadLayout
             if (!archiveButton) {
                 presenter.requestData();
             } else {
-                presenter.showArchives(presenter.getLoadable().board.code, presenter.getLoadable().no, -1);
+                presenter.showArchives(presenter.getLoadable(), presenter.getLoadable().no);
             }
         } else if (v == replyButton) {
             threadListLayout.openReply(true);
@@ -238,13 +237,12 @@ public class ThreadLayout
     }
 
     @Override
-    public void showPosts(ChanThread thread, PostsFilter filter, boolean hardRefresh) {
-
+    public void showPosts(ChanThread thread, PostsFilter filter) {
         if (replyButton.getVisibility() != VISIBLE && !(thread.getLoadable().site instanceof ExternalSiteArchive)) {
             replyButton.show();
         }
 
-        threadListLayout.showPosts(thread, filter, visible != Visible.THREAD, hardRefresh);
+        threadListLayout.showPosts(thread, filter, visible != Visible.THREAD);
 
         switchVisible(Visible.THREAD);
         callback.onShowPosts(thread.getLoadable());
@@ -385,8 +383,8 @@ public class ThreadLayout
     }
 
     @Override
-    public void highlightPost(Post post) {
-        threadListLayout.highlightPost(post);
+    public void highlightPostNo(int postNo) {
+        threadListLayout.highlightPostNo(postNo);
     }
 
     @Override
@@ -467,11 +465,6 @@ public class ThreadLayout
 
             dialog.show();
         }
-    }
-
-    @Override
-    public void selectPost(int post) {
-        threadListLayout.selectPost(post);
     }
 
     @Override
@@ -595,21 +588,23 @@ public class ThreadLayout
     }
 
     @Override
-    public void showNewPostsNotification(boolean show, int more) {
-        if (show) {
-            if (!threadListLayout.scrolledToBottom() && BackgroundUtils.isInForeground()
-                    && threadListLayout.getReplyPresenter().getPage() == Page.INPUT) {
-                String text = getQuantityString(R.plurals.thread_new_posts, more, more);
+    public void showNewPostsSnackbar(int more) {
+        if (more <= 0 || threadListLayout.scrolledToBottom() || !BackgroundUtils.isInForeground() || (
+                threadListLayout.isReplyLayoutOpen() && threadListLayout.getReplyPresenter().getPage() != Page.LOADING
+                        && ChanSettings.moveInputToBottom.get())) {
+            dismissSnackbar();
+            return;
+        }
+
+        if (threadListLayout.getReplyPresenter().getPage() != Page.AUTHENTICATION) {
+            String text = getQuantityString(R.plurals.thread_new_posts, more, more);
+            dismissSnackbar();
+            newPostsNotification = Snackbar.make(this, text, Snackbar.LENGTH_LONG);
+            newPostsNotification.setGestureInsetBottomIgnored(true);
+            newPostsNotification.setAction(R.string.thread_new_posts_goto, v -> {
+                presenter.onNewPostsViewClicked();
                 dismissSnackbar();
-                newPostsNotification = Snackbar.make(this, text, Snackbar.LENGTH_LONG);
-                newPostsNotification.setGestureInsetBottomIgnored(true);
-                newPostsNotification.setAction(R.string.thread_new_posts_goto, v -> {
-                    presenter.onNewPostsViewClicked();
-                    dismissSnackbar();
-                }).show();
-            } else {
-                dismissSnackbar();
-            }
+            }).show();
         } else {
             dismissSnackbar();
         }
@@ -685,15 +680,13 @@ public class ThreadLayout
 
     private void switchVisible(Visible visible) {
         if (this.visible != visible) {
-            if (this.visible != null) {
-                if (this.visible == Visible.THREAD) {
-                    threadListLayout.cleanup();
-                    postPopupHelper.popAll();
-                    if (presenter.getLoadable() == null || presenter.getLoadable().isThreadMode()) {
-                        showSearch(false);
-                    }
-                    dismissSnackbar();
+            if (this.visible == Visible.THREAD) {
+                threadListLayout.cleanup();
+                postPopupHelper.popAll();
+                if (presenter.getLoadable() == null || presenter.getLoadable().isThreadMode()) {
+                    showSearch(false);
                 }
+                dismissSnackbar();
             }
 
             this.visible = visible;
@@ -719,7 +712,6 @@ public class ThreadLayout
         }
     }
 
-    @SuppressLint("InflateParams")
     private View inflateEmptyView() {
         View view = LayoutUtils.inflate(getContext(), R.layout.layout_empty_setup, null);
         TextView tv = view.findViewById(R.id.feature);

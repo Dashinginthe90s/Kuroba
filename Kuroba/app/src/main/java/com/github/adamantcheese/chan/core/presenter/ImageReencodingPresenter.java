@@ -31,7 +31,6 @@ import com.github.adamantcheese.chan.core.repository.BitmapRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.http.Reply;
 import com.github.adamantcheese.chan.utils.BitmapUtils;
-import com.github.adamantcheese.chan.utils.ImageDecoder;
 import com.google.gson.Gson;
 
 import javax.inject.Inject;
@@ -40,12 +39,12 @@ import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getDisplaySize;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class ImageReencodingPresenter {
-    private Context context;
-    private ImageReencodingPresenterCallback callback;
-    private Reply draft;
+    private final Context context;
+    private final ImageReencodingPresenterCallback callback;
+    private final Reply draft;
 
     @Inject
     Gson gson;
@@ -60,7 +59,7 @@ public class ImageReencodingPresenter {
 
     public void loadImagePreview() {
         Point displaySize = getDisplaySize();
-        ImageDecoder.decodeFileOnBackgroundThread(draft.file,
+        BitmapUtils.decodeFilePreviewImage(draft.file,
                 //decode to the device width/height, whatever is smaller
                 dp(Math.min(displaySize.x, displaySize.y)), 0, bitmap -> {
                     if (bitmap == null) {
@@ -70,7 +69,7 @@ public class ImageReencodingPresenter {
                     }
 
                     callback.showImagePreview(bitmap);
-                }
+                }, true
         );
     }
 

@@ -50,19 +50,19 @@ import javax.inject.Inject;
 import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.core.site.SiteAuthentication.Type.CAPTCHA2_NOJS;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class CaptchaNoJsLayoutV2
         extends FrameLayout
         implements AuthenticationLayoutInterface, CaptchaNoJsPresenterV2.AuthenticationCallbacks {
     private static final long RECAPTCHA_TOKEN_LIVE_TIME = TimeUnit.MINUTES.toMillis(2);
 
-    private TextView captchaChallengeTitle;
-    private GridView captchaImagesGrid;
-    private Button captchaVerifyButton;
+    private final TextView captchaChallengeTitle;
+    private final GridView captchaImagesGrid;
+    private final Button captchaVerifyButton;
 
-    private CaptchaNoJsV2Adapter adapter;
-    private CaptchaNoJsPresenterV2 presenter;
+    private final CaptchaNoJsV2Adapter adapter;
+    private final CaptchaNoJsPresenterV2 presenter;
     private AuthenticationLayoutCallback callback;
 
     private boolean isAutoReply = true;

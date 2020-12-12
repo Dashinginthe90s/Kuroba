@@ -35,38 +35,33 @@ import javax.inject.Inject;
 
 import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class SitesSetupPresenter
         implements Observer {
-    private Context context;
+    private final Context context;
 
     @Inject
-    private final SiteRepository siteRepository = null;
+    private SiteRepository siteRepository;
     @Inject
-    private final BoardManager boardManager = null;
+    private BoardManager boardManager;
 
-    private Callback callback;
+    private final Callback callback;
 
-    private SiteRepository.Sites sites;
-    private List<Site> sitesShown = new ArrayList<>();
+    private final SiteRepository.Sites sites;
+    private final List<Site> sitesShown = new ArrayList<>();
 
     public SitesSetupPresenter(Context context, Callback callback) {
         inject(this);
         this.context = context;
         this.callback = callback;
 
-        //noinspection ConstantConditions this is dependency injected and will not be null
         sites = siteRepository.all();
         sites.addObserver(this);
 
         sitesShown.addAll(sites.getAllInOrder());
 
         updateSitesInUi();
-
-        if (sites.getAll().isEmpty()) {
-            callback.showHint();
-        }
     }
 
     public void destroy() {
@@ -84,6 +79,10 @@ public class SitesSetupPresenter
 
     public void show() {
         updateSitesInUi();
+
+        if (sites.getAll().isEmpty()) {
+            callback.showHint();
+        }
     }
 
     public void move(int from, int to) {
@@ -98,7 +97,6 @@ public class SitesSetupPresenter
     }
 
     public void onAddClicked(Class<? extends Site> siteClass) {
-        //noinspection ConstantConditions
         Site newSite = siteRepository.createFromClass(siteClass);
 
         sitesShown.add(newSite);
@@ -112,14 +110,12 @@ public class SitesSetupPresenter
     }
 
     private void saveOrder() {
-        //noinspection ConstantConditions
         siteRepository.updateSiteOrderingAsync(sitesShown);
     }
 
     private void updateSitesInUi() {
         List<SiteBoardCount> r = new ArrayList<>();
         for (Site site : sitesShown) {
-            //noinspection ConstantConditions
             r.add(new SiteBoardCount(site, boardManager.getSiteSavedBoards(site).size()));
         }
         callback.setSites(r);
@@ -127,7 +123,6 @@ public class SitesSetupPresenter
 
     public void removeSite(Site site) {
         try {
-            //noinspection ConstantConditions
             siteRepository.removeSite(site);
             ((StartActivity) context).restartApp();
         } catch (Throwable error) {

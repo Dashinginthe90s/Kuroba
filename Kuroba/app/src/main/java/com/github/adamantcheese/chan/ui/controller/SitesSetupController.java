@@ -28,7 +28,6 @@ import android.widget.ListView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.RecyclerView;
@@ -40,20 +39,22 @@ import com.github.adamantcheese.chan.core.presenter.SitesSetupPresenter.SiteBoar
 import com.github.adamantcheese.chan.core.repository.SiteRepository;
 import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.core.site.SiteRegistry;
-import com.github.adamantcheese.chan.ui.helper.HintPopup;
 import com.github.adamantcheese.chan.ui.view.CrossfadeView;
-import com.github.adamantcheese.chan.ui.view.DividerItemDecoration;
+import com.github.adamantcheese.chan.utils.AndroidUtils;
+import com.github.adamantcheese.chan.utils.RecyclerUtils;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.skydoves.balloon.ArrowConstraints;
+import com.skydoves.balloon.ArrowOrientation;
+import com.skydoves.balloon.Balloon;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import javax.inject.Inject;
 
-import static android.widget.LinearLayout.VERTICAL;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class SitesSetupController
@@ -67,13 +68,11 @@ public class SitesSetupController
 
     private CrossfadeView crossfadeView;
     private FloatingActionButton addButton;
-    @Nullable
-    private HintPopup hintPopup = null;
     private SitesAdapter sitesAdapter;
     private ItemTouchHelper itemTouchHelper;
-    private List<SiteBoardCount> sites = new ArrayList<>();
+    private final List<SiteBoardCount> sites = new ArrayList<>();
 
-    private ItemTouchHelper.SimpleCallback touchHelperCallback =
+    private final ItemTouchHelper.SimpleCallback touchHelperCallback =
             new ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
                 @Override
                 public boolean onMove(RecyclerView recyclerView, ViewHolder viewHolder, ViewHolder target) {
@@ -113,8 +112,10 @@ public class SitesSetupController
         sitesAdapter = new SitesAdapter();
 
         // View setup
+        sitesRecyclerview.getLayoutManager().setItemPrefetchEnabled(false);
         sitesRecyclerview.setAdapter(sitesAdapter);
-        sitesRecyclerview.addItemDecoration(new DividerItemDecoration(context, VERTICAL));
+        sitesRecyclerview.addItemDecoration(RecyclerUtils.getBottomDividerDecoration(context));
+
         itemTouchHelper = new ItemTouchHelper(touchHelperCallback);
         itemTouchHelper.attachToRecyclerView(sitesRecyclerview);
         addButton.setOnClickListener(this);
@@ -134,12 +135,6 @@ public class SitesSetupController
     @Override
     public void onDestroy() {
         super.onDestroy();
-
-        if (hintPopup != null) {
-            hintPopup.dismiss();
-            hintPopup = null;
-        }
-
         presenter.destroy();
     }
 
@@ -152,21 +147,17 @@ public class SitesSetupController
 
     @Override
     public void showHint() {
-        String s = getString(R.string.setup_sites_add_hint);
-
-        if (hintPopup != null) {
-            hintPopup.dismiss();
-            hintPopup = null;
-        }
-
-        hintPopup = new HintPopup(context, addButton, s, 0, 0, true);
-        hintPopup.wiggle();
-        hintPopup.show();
+        AndroidUtils.getBaseToolTip(context)
+                .setArrowConstraints(ArrowConstraints.ALIGN_ANCHOR)
+                .setArrowOrientation(ArrowOrientation.BOTTOM)
+                .setTextResource(R.string.setup_sites_add_hint)
+                .setPreferenceName("AddSite")
+                .build()
+                .showAlignTop(addButton);
     }
 
     @Override
     public void showAddDialog() {
-        @SuppressLint("InflateParams")
         final ListView dialogView = new ListView(context);
         SitePreviewAdapter adapter = new SitePreviewAdapter();
         if (adapter.siteClasses.isEmpty()) {
@@ -194,19 +185,6 @@ public class SitesSetupController
         crossfadeView.toggle(!sites.isEmpty(), true);
     }
 
-    private void onSiteCellSettingsClicked(Site site) {
-        presenter.onSiteCellSettingsClicked(site);
-    }
-
-    private void onRemoveSiteSettingClicked(Site site) {
-        new AlertDialog.Builder(context).setTitle(getString(R.string.delete_site_dialog_title))
-                .setMessage(getString(R.string.delete_site_dialog_message, site.name()))
-                .setPositiveButton(R.string.delete, (dialog, which) -> presenter.removeSite(site))
-                .setNegativeButton(R.string.cancel, (dialog, which) -> dialog.dismiss())
-                .create()
-                .show();
-    }
-
     private class SitesAdapter
             extends RecyclerView.Adapter<SiteHolder> {
         public SitesAdapter() {
@@ -226,22 +204,7 @@ public class SitesSetupController
 
         @Override
         public void onBindViewHolder(@NonNull SiteHolder holder, int position) {
-            SiteBoardCount site = sites.get(position);
-            holder.setSite(site.site);
-            holder.text.setText(site.site.name());
-
-            String descriptionText = getQuantityString(R.plurals.board, site.boardCount, site.boardCount);
-            holder.description.setText(descriptionText);
-
-            if (site.boardCount == 0) {
-                if (hintPopup != null) {
-                    hintPopup.dismiss();
-                    hintPopup = null;
-                }
-
-                hintPopup = HintPopup.show(context, holder.settings, R.string.setup_sites_add_boards_hint);
-                hintPopup.wiggle();
-            }
+            holder.setSiteBoardCount(sites.get(position));
         }
 
         @Override
@@ -249,6 +212,10 @@ public class SitesSetupController
             holder.image.setImageDrawable(null);
             holder.text.setText("");
             holder.description.setText("");
+            if (holder.hint != null) {
+                holder.hint.dismiss();
+                holder.hint = null;
+            }
         }
 
         @Override
@@ -258,15 +225,13 @@ public class SitesSetupController
     }
 
     private class SiteHolder
-            extends ViewHolder
-            implements View.OnClickListener {
-        private ImageView image;
-        private TextView text;
-        private TextView description;
-        private ImageView removeSite;
-        private ImageView settings;
+            extends ViewHolder {
+        private final ImageView image;
+        private final TextView text;
+        private final TextView description;
 
         private Site site;
+        private Balloon hint;
 
         @SuppressLint("ClickableViewAccessibility")
         public SiteHolder(View itemView) {
@@ -276,16 +241,19 @@ public class SitesSetupController
             image = itemView.findViewById(R.id.image);
             text = itemView.findViewById(R.id.text);
             description = itemView.findViewById(R.id.description);
-            removeSite = itemView.findViewById(R.id.remove_site);
-            settings = itemView.findViewById(R.id.settings);
+            ImageView removeSite = itemView.findViewById(R.id.remove_site);
             ImageView reorder = itemView.findViewById(R.id.reorder);
 
             // Setup views
-            itemView.setOnClickListener(this);
-            removeSite.setOnClickListener(this);
-            settings.setOnClickListener(this);
+            itemView.setOnClickListener(v -> presenter.onSiteCellSettingsClicked(site));
+            removeSite.setOnClickListener(v -> new AlertDialog.Builder(context).setTitle(getString(R.string.delete_site_dialog_title))
+                    .setMessage(getString(R.string.delete_site_dialog_message, site.name()))
+                    .setPositiveButton(R.string.delete, (dialog, which) -> presenter.removeSite(site))
+                    .setNegativeButton(R.string.cancel, (dialog, which) -> dialog.dismiss())
+                    .create()
+                    .show());
             // even though we don't react to click events, for ripple drawing this needs to be set
-            reorder.setOnClickListener(this);
+            reorder.setOnClickListener(v -> {});
 
             reorder.setOnTouchListener((v, event) -> {
                 if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
@@ -295,17 +263,22 @@ public class SitesSetupController
             });
         }
 
-        private void setSite(Site site) {
-            this.site = site;
+        private void setSiteBoardCount(SiteBoardCount siteBoardCount) {
+            this.site = siteBoardCount.site;
             site.icon().get(image::setImageDrawable);
-        }
+            text.setText(site.name());
 
-        @Override
-        public void onClick(View v) {
-            if (v == removeSite) {
-                onRemoveSiteSettingClicked(site);
-            } else if (v == itemView || v == settings) {
-                onSiteCellSettingsClicked(site);
+            int boardCount = siteBoardCount.boardCount;
+            String descriptionText = getQuantityString(R.plurals.board, boardCount, boardCount);
+            description.setText(descriptionText);
+
+            if (boardCount == 0) {
+                hint = AndroidUtils.getBaseToolTip(context)
+                        .setPreferenceName("AddBords")
+                        .setArrowOrientation(ArrowOrientation.LEFT)
+                        .setTextResource(R.string.setup_sites_add_boards_hint)
+                        .build();
+                hint.showAlignRight(description);
             }
         }
     }
@@ -313,7 +286,7 @@ public class SitesSetupController
     private class SitePreviewAdapter
             extends BaseAdapter {
 
-        private List<Class<? extends Site>> siteClasses = new ArrayList<>();
+        private final List<Class<? extends Site>> siteClasses = new ArrayList<>();
         private AlertDialog dialog;
 
         public SitePreviewAdapter() {

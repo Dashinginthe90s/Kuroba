@@ -44,10 +44,9 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.inject.Inject;
 
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getApplicationLabel;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
-import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class ImportExportSettingsController
         extends SettingsController
@@ -64,7 +63,7 @@ public class ImportExportSettingsController
     @Nullable
     private OnExportSuccessCallbacks callbacks;
 
-    private LoadingViewController loadingViewController;
+    private final LoadingViewController loadingViewController;
 
     public ImportExportSettingsController(Context context, @NonNull OnExportSuccessCallbacks callbacks) {
         super(context);
@@ -80,10 +79,6 @@ public class ImportExportSettingsController
         navigation.setTitle(R.string.settings_import_export);
 
         presenter = new ImportExportSettingsPresenter(this);
-
-        setupLayout();
-        populatePreferences();
-        buildPreferences();
     }
 
     @Override
@@ -97,12 +92,8 @@ public class ImportExportSettingsController
         callbacks = null;
     }
 
-    protected void setupLayout() {
-        view = inflate(context, R.layout.settings_layout);
-        content = view.findViewById(R.id.scrollview_content);
-    }
-
-    private void populatePreferences() {
+    @Override
+    protected void populatePreferences() {
         // Import/export settings group
         {
             SettingsGroup group = new SettingsGroup(getString(R.string.import_or_export_settings));

@@ -76,7 +76,7 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppFileProvide
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getApplicationLabel;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openIntent;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static java.util.concurrent.TimeUnit.DAYS;
 
 /**
@@ -93,7 +93,7 @@ public class UpdateManager {
     FileChooser fileChooser;
 
     private ProgressDialog updateDownloadDialog;
-    private Context context;
+    private final Context context;
 
     @Nullable
     private CancelableDownload cancelableDownload;
@@ -159,40 +159,47 @@ public class UpdateManager {
             NetUtils.makeJsonRequest(HttpUrl.get(UPDATE_API_ENDPOINT), new ResponseResult<UpdateApiResponse>() {
                 @Override
                 public void onFailure(Exception e) {
-                    failedUpdate(manual);
+                    BackgroundUtils.runOnMainThread(() -> failedUpdate(manual));
                 }
 
                 @Override
                 public void onSuccess(UpdateApiResponse result) {
-                    if (!processUpdateApiResponse(result, manual) && manual && BackgroundUtils.isInForeground()) {
-                        showToast(context, getString(R.string.update_none, getApplicationLabel()), Toast.LENGTH_LONG);
-                    }
+                    BackgroundUtils.runOnMainThread(() -> {
+                        if (!processUpdateApiResponse(result, manual) && manual && BackgroundUtils.isInForeground()) {
+                            showToast(context,
+                                    getString(R.string.update_none, getApplicationLabel()),
+                                    Toast.LENGTH_LONG
+                            );
+                        }
+                    });
                 }
             }, new UpdateApiParser());
         } else {
             NetUtils.makeJsonRequest(HttpUrl.get(DEV_API_ENDPOINT), new ResponseResult<UpdateApiResponse>() {
                 @Override
                 public void onFailure(Exception e) {
-                    failedUpdate(manual);
+                    BackgroundUtils.runOnMainThread(() -> failedUpdate(manual));
                 }
 
                 @Override
                 public void onSuccess(UpdateApiResponse result) {
-                    if (result == null) {
-                        failedUpdate(manual);
-                    } else if (result.commitHash.equals(COMMIT_HASH)) {
-                        //same version and commit, no update needed
-                        if (manual && BackgroundUtils.isInForeground()) {
-                            showToast(context,
-                                    getString(R.string.update_none, getApplicationLabel()),
-                                    Toast.LENGTH_LONG
-                            );
-                        }
+                    BackgroundUtils.runOnMainThread(() -> {
+                        if (result == null) {
+                            failedUpdate(manual);
+                        } else if (result.commitHash.equals(COMMIT_HASH)) {
+                            //same version and commit, no update needed
+                            if (manual && BackgroundUtils.isInForeground()) {
+                                showToast(context,
+                                        getString(R.string.update_none, getApplicationLabel()),
+                                        Toast.LENGTH_LONG
+                                );
+                            }
 
-                        cancelApkUpdateNotification();
-                    } else {
-                        processUpdateApiResponse(result, manual);
-                    }
+                            cancelApkUpdateNotification();
+                        } else {
+                            processUpdateApiResponse(result, manual);
+                        }
+                    });
                 }
             }, new UpdateApiParser());
         }

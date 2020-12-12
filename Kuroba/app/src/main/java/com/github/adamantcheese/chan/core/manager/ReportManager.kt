@@ -202,7 +202,7 @@ class ReportManager(
             return
         }
 
-        crashLogs.forEach { crashLog -> crashLog.file.delete() }
+        crashLogs.forEach { (file) -> file.delete() }
 
         val remainingCrashLogs = crashLogsDirPath.listFiles()?.size ?: 0
         if (remainingCrashLogs == 0) {
@@ -283,7 +283,6 @@ class ReportManager(
         return buildString {
             appendLine("Prefetching enabled: ${ChanSettings.autoLoadThreadImages.get()}")
             appendLine("Embedding enabled: ${ChanSettings.enableEmbedding.get()}")
-            appendLine("Concurrent file loading chunks count: ${ChanSettings.concurrentDownloadChunkCount.get().toInt()}")
             appendLine("WEBM streaming enabled: ${ChanSettings.videoStream.get()}")
             appendLine("Saved files base dir info: ${getFilesLocationInfo()}")
             appendLine("Phone layout mode: ${ChanSettings.layoutMode.get().name}")

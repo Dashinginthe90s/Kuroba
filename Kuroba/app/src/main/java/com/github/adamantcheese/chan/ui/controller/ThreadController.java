@@ -45,7 +45,7 @@ import org.greenrobot.eventbus.Subscribe;
 import java.util.List;
 
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public abstract class ThreadController
@@ -54,7 +54,6 @@ public abstract class ThreadController
                    SwipeRefreshLayout.OnRefreshListener, ToolbarNavigationController.ToolbarSearchCallback,
                    NfcAdapter.CreateNdefMessageCallback, ThreadSlideController.SlideChangeListener {
     protected ThreadLayout threadLayout;
-    private SwipeRefreshLayout swipeRefreshLayout;
 
     public ThreadController(Context context) {
         super(context);
@@ -71,23 +70,21 @@ public abstract class ThreadController
         threadLayout = (ThreadLayout) inflate(context, R.layout.layout_thread, null);
         threadLayout.create(this);
 
-        swipeRefreshLayout = new SwipeRefreshLayout(context) {
+        view = new SwipeRefreshLayout(context) {
             @Override
             public boolean canChildScrollUp() {
                 return threadLayout.canChildScrollUp();
             }
         };
-        swipeRefreshLayout.addView(threadLayout);
+        view.addView(threadLayout);
         // allows the recycler to have inertia and the drawer to be opened without the recycler taking the event away from
         // the drawer slide-to-open event
-        swipeRefreshLayout.setLegacyRequestDisallowInterceptTouchEventEnabled(true);
+        ((SwipeRefreshLayout) view).setLegacyRequestDisallowInterceptTouchEventEnabled(true);
 
-        swipeRefreshLayout.setOnRefreshListener(this);
+        ((SwipeRefreshLayout) view).setOnRefreshListener(this);
 
         int toolbarHeight = getToolbar().getToolbarHeight();
-        swipeRefreshLayout.setProgressViewOffset(false, toolbarHeight - dp(40), toolbarHeight + dp(64 - 40));
-
-        view = swipeRefreshLayout;
+        ((SwipeRefreshLayout) view).setProgressViewOffset(false, toolbarHeight - dp(40), toolbarHeight + dp(64 - 40));
     }
 
     @Override
@@ -109,8 +106,8 @@ public abstract class ThreadController
         return threadLayout.getPresenter().getLoadable();
     }
 
-    public void selectPost(int post) {
-        threadLayout.getPresenter().selectPost(post);
+    public void highlightPostNo(int postNo) {
+        threadLayout.getPresenter().highlightPostNo(postNo);
     }
 
     @Override
@@ -130,7 +127,7 @@ public abstract class ThreadController
 
     @Subscribe
     public void onEvent(RefreshUIMessage message) {
-        threadLayout.getPresenter().requestData();
+        onRefresh();
     }
 
     @Override
@@ -218,11 +215,7 @@ public abstract class ThreadController
 
     @Override
     public void hideSwipeRefreshLayout() {
-        if (swipeRefreshLayout == null) {
-            return;
-        }
-
-        swipeRefreshLayout.setRefreshing(false);
+        ((SwipeRefreshLayout) view).setRefreshing(false);
     }
 
     @Override
@@ -239,6 +232,9 @@ public abstract class ThreadController
     public void onSearchEntered(String entered) {
         threadLayout.getPresenter().onSearchEntered(entered);
     }
+
+    @Override
+    public void onNavItemSet() {}
 
     @Override
     public void openFilterForType(FilterType type, String filterText) {

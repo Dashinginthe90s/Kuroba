@@ -16,7 +16,6 @@
  */
 package com.github.adamantcheese.chan.core.presenter;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
 
 import androidx.annotation.Nullable;
@@ -66,11 +65,11 @@ import static com.github.adamantcheese.chan.ui.view.MultiImageView.Mode.VIDEO;
 import static com.github.adamantcheese.chan.ui.view.MultiImageView.Mode.WEBVIEW;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAudioManager;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class ImageViewerPresenter
         implements MultiImageView.Callback, ViewPager.OnPageChangeListener {
-    private Context context;
+    private final Context context;
     private static final int PRELOAD_IMAGE_INDEX = 1;
     /**
      * We don't want to cancel an image right after we have started preloading it because it
@@ -93,7 +92,7 @@ public class ImageViewerPresenter
     private int selectedPosition = 0;
     private SwipeDirection swipeDirection = SwipeDirection.Default;
     private Loadable loadable;
-    private Set<CancelableDownload> preloadingImages = new HashSet<>();
+    private final Set<CancelableDownload> preloadingImages = new HashSet<>();
     private final Set<HttpUrl> nonCancelableImages = new HashSet<>();
 
     // Disables swiping until the view pager is visible
@@ -109,32 +108,23 @@ public class ImageViewerPresenter
         inject(this);
     }
 
-    @SuppressLint("UseSparseArrays")
     public void showImages(List<PostImage> images, int position, Loadable loadable) {
         this.images = images;
         this.loadable = loadable;
         this.selectedPosition = Math.max(0, Math.min(images.size() - 1, position));
         this.progress = new HashMap<>(images.size());
 
-        int chunksCount = ChanSettings.concurrentDownloadChunkCount.get().toInt();
-
         for (int i = 0; i < images.size(); ++i) {
-            Float[] initialProgress = new Float[chunksCount];
+            Float[] initialProgress =
+                    new Float[Math.min(4, loadable.site.getChunkDownloaderSiteProperties().maxChunksForSite)];
             Arrays.fill(initialProgress, .1f);
             // Always use a little bit of progress so it's obvious that we have started downloading the image
             progress.put(i, initialProgress);
         }
 
         // Do this before the view is measured, to avoid it to always loading the first two pages
-        callback.setPagerItems(loadable, images, selectedPosition);
+        callback.setPagerItems(images, selectedPosition);
         callback.setImageMode(images.get(selectedPosition), LOWRES, true);
-    }
-
-    public void onViewMeasured() {
-        // Pager is measured, but still invisible
-        PostImage postImage = images.get(selectedPosition);
-        callback.startPreviewInTransition(postImage);
-        callback.setTitle(postImage, selectedPosition, images.size(), postImage.spoiler());
     }
 
     public boolean isTransitioning() {
@@ -405,8 +395,11 @@ public class ImageViewerPresenter
             if (loadChunked) {
                 DownloadRequestExtraInfo extraInfo = new DownloadRequestExtraInfo(postImage.size, postImage.fileHash);
 
-                preloadDownload[0] =
-                        fileCacheV2.enqueueChunkedDownloadFileRequest(postImage, extraInfo, fileCacheListener);
+                preloadDownload[0] = fileCacheV2.enqueueChunkedDownloadFileRequest(postImage,
+                        extraInfo,
+                        loadable.site.getChunkDownloaderSiteProperties(),
+                        fileCacheListener
+                );
             } else {
                 preloadDownload[0] = fileCacheV2.enqueueNormalDownloadFileRequest(postImage, fileCacheListener);
             }
@@ -540,7 +533,7 @@ public class ImageViewerPresenter
     public void onDownloaded(PostImage postImage) {
         BackgroundUtils.ensureMainThread();
 
-        if (getCurrentPostImage().equals(postImage)) {
+        if (getCurrentPostImage().equals(postImage) && !postImage.deleted) { // don't allow saving the "deleted" image
             callback.showDownloadMenuItem(true);
         }
     }
@@ -686,7 +679,7 @@ public class ImageViewerPresenter
 
         void setPagerVisiblity(boolean visible);
 
-        void setPagerItems(Loadable loadable, List<PostImage> images, int initialIndex);
+        void setPagerItems(List<PostImage> images, int initialIndex);
 
         void setImageMode(PostImage postImage, MultiImageView.Mode mode, boolean center);
 

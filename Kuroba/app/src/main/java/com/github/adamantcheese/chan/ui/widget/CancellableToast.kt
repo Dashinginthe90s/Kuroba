@@ -5,31 +5,45 @@ import android.widget.Toast
 import com.github.adamantcheese.chan.utils.AndroidUtils.getString
 import com.github.adamantcheese.chan.utils.BackgroundUtils
 
-class CancellableToast {
+object CancellableToast {
     private var toast: Toast? = null
 
-    fun showToast(context: Context, message: String) {
-        showToast(context, message, Toast.LENGTH_SHORT)
-    }
-
-    fun showToast(context: Context, msgResId: Int) {
-        showToast(context, msgResId, Toast.LENGTH_SHORT)
-    }
-
-    fun showToast(context: Context, msgResId: Int, duration: Int) {
-        showToast(context, getString(msgResId), duration)
-    }
-
-    fun showToast(context: Context, message: String, duration: Int) {
-        BackgroundUtils.ensureMainThread()
-
+    @JvmStatic
+    @Synchronized
+    fun cleanup() {
         if (toast != null) {
             toast!!.cancel()
             toast = null
         }
+    }
 
+    @JvmStatic
+    fun showToast(context: Context, message: String) {
+        showToast(context, message, Toast.LENGTH_SHORT)
+    }
+
+    @JvmStatic
+    fun showToast(context: Context, msgResId: Int) {
+        showToast(context, msgResId, Toast.LENGTH_SHORT)
+    }
+
+    @JvmStatic
+    fun showToast(context: Context, msgResId: Int, duration: Int) {
+        showToast(context, getString(msgResId), duration)
+    }
+
+    @JvmStatic
+    fun showToast(context: Context, message: String, duration: Int) {
         if (BackgroundUtils.isInForeground()) {
-            toast = Toast.makeText(context, message, duration).apply { show() }
+            BackgroundUtils.runOnMainThread {
+                showToastInternal(context, message, duration)
+            }
         }
+    }
+
+    @Synchronized
+    private fun showToastInternal(context: Context, message: String, duration: Int) {
+        cleanup()
+        toast = Toast.makeText(context, message, duration).apply { show() }
     }
 }

@@ -24,7 +24,6 @@ import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.settings.base_dir.SavedFilesBaseDirSetting;
 import com.github.adamantcheese.chan.core.settings.primitives.BooleanSetting;
-import com.github.adamantcheese.chan.core.settings.primitives.CounterSetting;
 import com.github.adamantcheese.chan.core.settings.primitives.IntegerSetting;
 import com.github.adamantcheese.chan.core.settings.primitives.OptionSettingItem;
 import com.github.adamantcheese.chan.core.settings.primitives.OptionsSetting;
@@ -138,28 +137,6 @@ public class ChanSettings {
         }
     }
 
-    public enum ConcurrentFileDownloadingChunks
-            implements OptionSettingItem {
-        One("One chunk"),
-        Two("Two chunks"),
-        Four("Four chunks");
-
-        String name;
-
-        ConcurrentFileDownloadingChunks(String name) {
-            this.name = name;
-        }
-
-        @Override
-        public String getKey() {
-            return name;
-        }
-
-        public int toInt() {
-            return (int) Math.pow(2, ordinal());
-        }
-    }
-
     public enum ImageClickPreloadStrategy
             implements OptionSettingItem {
         PreloadNext("Preload next image"),
@@ -207,6 +184,7 @@ public class ChanSettings {
     public static final IntegerSetting boardGridSpanCountLandscape;
     public static final IntegerSetting albumGridSpanCountLandscape;
     public static final BooleanSetting neverHideToolbar;
+    public static final BooleanSetting alwaysShowPostOptions;
     public static final BooleanSetting enableReplyFab;
     public static final BooleanSetting moveInputToBottom;
     public static final BooleanSetting captchaOnBottom;
@@ -304,7 +282,6 @@ public class ChanSettings {
     //endregion
 
     //region EXPERIMENTAL
-    public static final OptionsSetting<ConcurrentFileDownloadingChunks> concurrentDownloadChunkCount;
     public static final StringSetting androidTenGestureZones;
     public static final BooleanSetting okHttpAllowHttp2;
     public static final BooleanSetting okHttpAllowIpv6;
@@ -323,12 +300,6 @@ public class ChanSettings {
     //region DATA
     // While not a setting, the last image options selected should be persisted even after import.
     public static final StringSetting lastImageOptions;
-
-    // While these are not "settings", they are here instead of in PersistableChanState because they control the appearance of hints.
-    // Hints should not be shown if re-imported.
-    public static final CounterSetting threadOpenCounter;
-    public static final IntegerSetting drawerAutoOpenCount;
-    public static final BooleanSetting reencodeHintShown;
     //endregion
     //endregion
 
@@ -372,6 +343,7 @@ public class ChanSettings {
             boardGridSpanCountLandscape = new IntegerSetting(p, "preference_board_grid_span_count_landscape", 0);
             albumGridSpanCountLandscape = new IntegerSetting(p, "preference_album_grid_span_count_landscape", 0);
             neverHideToolbar = new BooleanSetting(p, "preference_never_hide_toolbar", false);
+            alwaysShowPostOptions = new BooleanSetting(p, "preference_always_show_post_options", false);
             enableReplyFab = new BooleanSetting(p, "preference_enable_reply_fab", true);
             moveInputToBottom = new BooleanSetting(p, "move_input_bottom", false);
             captchaOnBottom = new BooleanSetting(p, "captcha_on_bottom", true);
@@ -489,11 +461,6 @@ public class ChanSettings {
             //endregion
 
             //region EXPERIMENTAL
-            concurrentDownloadChunkCount = new OptionsSetting<>(p,
-                    "concurrent_file_downloading_chunks_count",
-                    ConcurrentFileDownloadingChunks.class,
-                    ConcurrentFileDownloadingChunks.Two
-            );
             androidTenGestureZones = new StringSetting(p, "android_ten_gesture_zones", EMPTY_JSON);
             okHttpAllowHttp2 = new BooleanSetting(p, "ok_http_allow_http_2", true);
             okHttpAllowIpv6 = new BooleanSetting(p, "ok_http_allow_ipv6", true);
@@ -511,9 +478,6 @@ public class ChanSettings {
 
             //region DATA
             lastImageOptions = new StringSetting(p, "last_image_options", "");
-            threadOpenCounter = new CounterSetting(p, "counter_thread_open");
-            drawerAutoOpenCount = new IntegerSetting(p, "drawer_auto_open_count", 0);
-            reencodeHintShown = new BooleanSetting(p, "preference_reencode_hint_already_shown", false);
             //endregion
 
         } catch (Throwable error) {
@@ -551,15 +515,15 @@ public class ChanSettings {
     }
 
     public static int getBoardColumnCount() {
-        return getScreenOrientation() == ORIENTATION_PORTRAIT
-                ? ChanSettings.boardGridSpanCountPortrait.get()
-                : ChanSettings.boardGridSpanCountLandscape.get();
+        return (getScreenOrientation() == ORIENTATION_PORTRAIT
+                ? ChanSettings.boardGridSpanCountPortrait
+                : ChanSettings.boardGridSpanCountLandscape).get();
     }
 
     public static int getAlbumColumnCount() {
-        return getScreenOrientation() == ORIENTATION_PORTRAIT
-                ? ChanSettings.albumGridSpanCountPortrait.get()
-                : ChanSettings.albumGridSpanCountLandscape.get();
+        return (getScreenOrientation() == ORIENTATION_PORTRAIT
+                ? ChanSettings.albumGridSpanCountPortrait
+                : ChanSettings.albumGridSpanCountLandscape).get();
     }
 
     public static boolean shouldUseFullSizeImage(PostImage postImage) {

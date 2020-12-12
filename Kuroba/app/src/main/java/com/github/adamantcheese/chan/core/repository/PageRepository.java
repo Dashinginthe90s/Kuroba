@@ -24,6 +24,7 @@ import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.site.common.CommonDataStructs.ChanPage;
 import com.github.adamantcheese.chan.core.site.common.CommonDataStructs.ChanPages;
 import com.github.adamantcheese.chan.core.site.common.CommonDataStructs.ThreadNoTimeModPair;
+import com.github.adamantcheese.chan.utils.BackgroundUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,12 +37,12 @@ import java.util.concurrent.ConcurrentMap;
 import static java.util.concurrent.TimeUnit.MINUTES;
 
 public class PageRepository {
-    private static Set<Board> requestedBoards = Collections.synchronizedSet(new HashSet<>());
-    private static Set<Board> savedBoards = Collections.synchronizedSet(new HashSet<>());
-    private static ConcurrentMap<Board, ChanPages> boardPagesMap = new ConcurrentHashMap<>();
-    private static ConcurrentMap<Board, Long> boardTimeMap = new ConcurrentHashMap<>();
+    private static final Set<Board> requestedBoards = Collections.synchronizedSet(new HashSet<>());
+    private static final Set<Board> savedBoards = Collections.synchronizedSet(new HashSet<>());
+    private static final ConcurrentMap<Board, ChanPages> boardPagesMap = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Board, Long> boardTimeMap = new ConcurrentHashMap<>();
 
-    private static List<PageCallback> callbackList = new ArrayList<>();
+    private static final List<PageCallback> callbackList = new ArrayList<>();
 
     public static ChanPage getPage(@NonNull Post op) {
         return findPage(op.board, op.no);
@@ -51,8 +52,10 @@ public class PageRepository {
         return findPage(opLoadable.board, opLoadable.no);
     }
 
-    public static void forceUpdateForBoard(Board b) {
-        requestBoard(b);
+    public static void forceUpdateForBoard(final Board b) {
+        if (b != null) {
+            BackgroundUtils.runOnBackgroundThread(() -> requestBoard(b), 10000);
+        }
     }
 
     private static ChanPage findPage(Board board, int opNo) {
@@ -83,7 +86,7 @@ public class PageRepository {
 
     private static void shouldUpdate(Board b) {
         if (b == null) return; //if for any reason the board is null, don't do anything
-        Long lastUpdate = boardTimeMap.get(b); //had some null issues for some reason? arisuchan in particular?
+        Long lastUpdate = boardTimeMap.get(b);
         long lastUpdateTime = lastUpdate != null ? lastUpdate : 0L;
         if (lastUpdateTime + MINUTES.toMillis(3) <= System.currentTimeMillis()) {
             requestBoard(b);

@@ -28,7 +28,7 @@ import java.util.concurrent.Callable;
 
 public class DatabasePinManager {
     DatabaseHelper helper;
-    private DatabaseLoadableManager databaseLoadableManager;
+    private final DatabaseLoadableManager databaseLoadableManager;
 
     public DatabasePinManager(DatabaseHelper helper, DatabaseLoadableManager databaseLoadableManager) {
         this.helper = helper;
@@ -99,9 +99,5 @@ public class DatabasePinManager {
 
             return null;
         };
-    }
-
-    public Callable<Pin> getPinByLoadableId(int loadableId) {
-        return () -> helper.getPinDao().queryBuilder().where().eq("loadable_id", loadableId).queryForFirst();
     }
 }

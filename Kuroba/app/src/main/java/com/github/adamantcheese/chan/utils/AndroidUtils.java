@@ -18,7 +18,6 @@ package com.github.adamantcheese.chan.utils;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.ActivityManager;
 import android.app.Application;
 import android.app.Dialog;
 import android.app.NotificationManager;
@@ -53,10 +52,13 @@ import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.browser.customtabs.CustomTabColorSchemeParams;
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.preference.PreferenceManager;
 
 import com.github.adamantcheese.chan.R;
+import com.skydoves.balloon.Balloon;
 
 import org.greenrobot.eventbus.EventBus;
 
@@ -73,6 +75,7 @@ import static android.content.Context.NOTIFICATION_SERVICE;
 import static android.content.res.Configuration.ORIENTATION_LANDSCAPE;
 import static android.content.res.Configuration.ORIENTATION_PORTRAIT;
 import static android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class AndroidUtils {
     private static final String TAG = "AndroidUtils";
@@ -80,11 +83,20 @@ public class AndroidUtils {
 
     @SuppressLint("StaticFieldLeak")
     private static Application application;
+    private static AppCompatActivity activity;
 
-    public static void init(Application application) {
+    public static void init(Application application, AppCompatActivity activity) {
         if (AndroidUtils.application == null) {
             AndroidUtils.application = application;
         }
+        if (AndroidUtils.activity == null) {
+            AndroidUtils.activity = activity;
+        }
+    }
+
+    public static void cleanup() {
+        application = null;
+        activity = null;
     }
 
     public static Resources getRes() {
@@ -93,6 +105,15 @@ public class AndroidUtils {
 
     public static Context getAppContext() {
         return application;
+    }
+
+    /**
+     * LIKE SERIOUSLY DON'T USE THIS IF YOU DON'T NEED TO
+     *
+     * @return The activity as a context.
+     */
+    public static Context getActivityContext() {
+        return activity;
     }
 
     public static String getString(int res) {
@@ -202,9 +223,13 @@ public class AndroidUtils {
             }
 
             if (openWithCustomTabs) {
-                new CustomTabsIntent.Builder().setToolbarColor(getAttrColor(context, R.attr.colorPrimary))
+                //@formatter:off
+                new CustomTabsIntent.Builder()
+                        .setDefaultColorSchemeParams(new CustomTabColorSchemeParams.Builder()
+                                .setToolbarColor(getAttrColor(context, R.attr.colorPrimary)).build())
                         .build()
                         .launchUrl(context, Uri.parse(link));
+                //@formatter:on
             } else {
                 openLink(link);
             }
@@ -466,23 +491,6 @@ public class AndroidUtils {
         }
     }
 
-    public static List<View> findViewsById(ViewGroup root, int id) {
-        List<View> views = new ArrayList<>();
-        int childCount = root.getChildCount();
-        for (int i = 0; i < childCount; i++) {
-            View child = root.getChildAt(i);
-            if (child instanceof ViewGroup) {
-                views.addAll(findViewsById((ViewGroup) child, id));
-            }
-
-            if (child.getId() == id) {
-                views.add(child);
-            }
-        }
-
-        return views;
-    }
-
     public static boolean removeFromParentView(View view) {
         if (view.getParent() instanceof ViewGroup && ((ViewGroup) view.getParent()).indexOfChild(view) >= 0) {
             ((ViewGroup) view.getParent()).removeView(view);
@@ -490,10 +498,6 @@ public class AndroidUtils {
         } else {
             return false;
         }
-    }
-
-    public static ActivityManager getActivityManager() {
-        return (ActivityManager) application.getSystemService(Context.ACTIVITY_SERVICE);
     }
 
     public static boolean isConnected(int type) {
@@ -552,22 +556,6 @@ public class AndroidUtils {
         }
     }
 
-    public static void showToast(Context context, String message, int duration) {
-        BackgroundUtils.runOnMainThread(() -> Toast.makeText(context, message, duration).show());
-    }
-
-    public static void showToast(Context context, String message) {
-        showToast(context, message, Toast.LENGTH_SHORT);
-    }
-
-    public static void showToast(Context context, int resId, int duration) {
-        showToast(context, getString(resId), duration);
-    }
-
-    public static void showToast(Context context, int resId) {
-        showToast(context, getString(resId));
-    }
-
     private static InputMethodManager getInputManager() {
         return (InputMethodManager) application.getSystemService(INPUT_METHOD_SERVICE);
     }
@@ -576,9 +564,9 @@ public class AndroidUtils {
         return (ClipboardManager) application.getSystemService(CLIPBOARD_SERVICE);
     }
 
-    public static String getClipboardContent() {
+    public static CharSequence getClipboardContent() {
         ClipData primary = getClipboardManager().getPrimaryClip();
-        return primary != null ? primary.getItemAt(0).getText().toString() : "";
+        return primary != null ? primary.getItemAt(0).coerceToText(getAppContext()) : "";
     }
 
     public static void setClipboardContent(String label, String content) {
@@ -662,5 +650,26 @@ public class AndroidUtils {
         }
 
         return "Unknown";
+    }
+
+    /**
+     * You'll need to add the following after you get this base popup:<br>
+     * Arrow constraints (if needed)<br>
+     * Arrow orientation<br>
+     * The text for the hint (resID or String)<br>
+     * A preference name, to only show this once<br><br>
+     * You'll also need to call showAlignX, where X is opposite of the arrow orientation
+     *
+     * @param context The AppCompatActivity context for this hint.
+     * @return A hint popup that still needs additional information.
+     */
+    public static Balloon.Builder getBaseToolTip(Context context) {
+        return new Balloon.Builder(context).setTextSize(14f)
+                .setPadding(10)
+                .setCornerRadius(2f)
+                .setDismissWhenClicked(true)
+                .setTextColor(getContrastColor(getAttrColor(context, R.attr.colorAccent)))
+                .setBackgroundColor(getAttrColor(context, R.attr.colorAccent))
+                .setLifecycleOwner((AppCompatActivity) context);
     }
 }

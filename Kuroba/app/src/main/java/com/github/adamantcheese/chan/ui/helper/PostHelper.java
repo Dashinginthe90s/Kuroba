@@ -46,7 +46,6 @@ public class PostHelper {
         return string;
     }
 
-    @SuppressWarnings("ConstantConditions")
     public static String getTitle(@Nullable Post post, @NonNull Loadable loadable) {
         if (post != null) {
             if (!TextUtils.isEmpty(post.subject)) {
@@ -63,9 +62,9 @@ public class PostHelper {
         }
     }
 
-    private static DateFormat dateFormat =
+    private static final DateFormat dateFormat =
             SimpleDateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM, Locale.getDefault());
-    private static Date tmpDate = new Date();
+    private static final Date tmpDate = new Date();
 
     public static String getLocalDate(Post post) {
         tmpDate.setTime(post.time * 1000L);

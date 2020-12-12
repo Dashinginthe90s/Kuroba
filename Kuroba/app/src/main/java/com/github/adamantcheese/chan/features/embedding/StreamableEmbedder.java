@@ -1,16 +1,19 @@
 package com.github.adamantcheese.chan.features.embedding;
 
 import android.graphics.Bitmap;
+import android.text.SpannableStringBuilder;
 import android.util.JsonReader;
 
 import androidx.core.util.Pair;
 
 import com.github.adamantcheese.chan.BuildConfig;
-import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostImage;
+import com.github.adamantcheese.chan.core.model.PostLinkable;
+import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.repository.BitmapRepository;
 import com.github.adamantcheese.chan.features.embedding.EmbeddingEngine.EmbedResult;
 import com.github.adamantcheese.chan.ui.theme.Theme;
+import com.github.adamantcheese.chan.utils.StringUtils;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -18,6 +21,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import kotlin.random.Random;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.HttpUrl;
@@ -31,8 +35,8 @@ public class StreamableEmbedder
             Pattern.compile("https?://(?:www\\.)?streamable\\.com/(.{6})(?:/|\\b)");
 
     @Override
-    public List<String> getShortRepresentations() {
-        return Collections.singletonList("streamable");
+    public boolean shouldEmbed(CharSequence comment, Board board) {
+        return StringUtils.containsAny(comment, Collections.singletonList("streamable"));
     }
 
     @Override
@@ -84,8 +88,13 @@ public class StreamableEmbedder
      */
 
     @Override
-    public List<Pair<Call, Callback>> generateCallPairs(Theme theme, Post post) {
-        return addStandardEmbedCalls(this, theme, post);
+    public List<Pair<Call, Callback>> generateCallPairs(
+            Theme theme,
+            SpannableStringBuilder commentCopy,
+            List<PostLinkable> generatedLinkables,
+            List<PostImage> generatedImages
+    ) {
+        return addStandardEmbedCalls(this, theme, commentCopy, generatedLinkables, generatedImages);
     }
 
     @Override
@@ -96,7 +105,7 @@ public class StreamableEmbedder
         HttpUrl thumbnailUrl = null;
         long size = -1L;
 
-        String title = "titleMissing" + Math.random();
+        String title = "titleMissing" + Random.Default.nextDouble();
         double duration = Double.NaN;
 
         response.beginObject(); // JSON start
@@ -158,7 +167,7 @@ public class StreamableEmbedder
                         .imageUrl(mp4Url)
                         .filename(title)
                         .extension("mp4")
-                        .isInlined(true)
+                        .isInlined()
                         .size(size)
                         .build()
         );

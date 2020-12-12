@@ -38,7 +38,7 @@ import javax.inject.Inject;
 
 import static com.github.adamantcheese.chan.ui.helper.RefreshUIMessage.Reason.THREAD_HIDES_CLEARED;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.postToEventBus;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class BehaviourSettingsController
         extends SettingsController {
@@ -53,17 +53,10 @@ public class BehaviourSettingsController
     public void onCreate() {
         super.onCreate();
         navigation.setTitle(R.string.settings_screen_behavior);
-
-        setupLayout();
-        rebuildPreferences();
     }
 
-    private void rebuildPreferences() {
-        populatePreferences();
-        buildPreferences();
-    }
-
-    private void populatePreferences() {
+    @Override
+    protected void populatePreferences() {
         requiresUiRefresh.clear();
         groups.clear();
         requiresRestart.clear();

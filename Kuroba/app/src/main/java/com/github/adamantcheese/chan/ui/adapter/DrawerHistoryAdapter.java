@@ -14,6 +14,7 @@ import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager;
 import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager.History;
 import com.github.adamantcheese.chan.core.database.DatabaseUtils;
+import com.github.adamantcheese.chan.ui.layout.SearchLayout;
 import com.github.adamantcheese.chan.ui.view.ThumbnailView;
 
 import java.util.ArrayList;
@@ -35,13 +36,20 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrDrawable;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.updatePaddings;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
+import static com.github.adamantcheese.chan.utils.StringUtils.applySearchSpans;
 
 public class DrawerHistoryAdapter
-        extends RecyclerView.Adapter<DrawerHistoryAdapter.HistoryCell> {
-    private List<History> historyList = new ArrayList<>();
+        extends RecyclerView.Adapter<DrawerHistoryAdapter.HistoryCell>
+        implements SearchLayout.SearchLayoutCallback {
+    private final List<History> historyList = new ArrayList<>();
 
+    private String searchQuery = "";
     private History highlighted;
-    private Callback callback;
+    private final Callback callback;
+
+    // Placeholder history variables
+    private final History LOADING = new History(null);
+    private final History NO_HISTORY = new History(null);
 
     public DrawerHistoryAdapter(Callback callback) {
         this.callback = callback;
@@ -51,12 +59,15 @@ public class DrawerHistoryAdapter
 
     public void load() {
         historyList.clear();
-        historyList.add(null);
+        historyList.add(LOADING);
         highlighted = null;
         notifyDataSetChanged();
 
         DatabaseUtils.runTaskAsync(instance(DatabaseLoadableManager.class).getHistory(), (result) -> {
             historyList.clear();
+            if (result.isEmpty()) {
+                result.add(NO_HISTORY);
+            }
             historyList.addAll(result);
             notifyDataSetChanged();
         });
@@ -70,10 +81,22 @@ public class DrawerHistoryAdapter
     @Override
     public void onBindViewHolder(HistoryCell holder, int position) {
         History history = historyList.get(position);
-        if (history != null) {
+        if (history != LOADING && history != NO_HISTORY) {
+            if (!history.loadable.title.toLowerCase().contains(searchQuery.toLowerCase())) {
+                holder.itemView.setVisibility(View.GONE);
+                ViewGroup.LayoutParams oldParams = holder.itemView.getLayoutParams();
+                oldParams.height = 0;
+                oldParams.width = 0;
+                holder.itemView.setLayoutParams(oldParams);
+                return;
+            } else {
+                holder.itemView.setVisibility(View.VISIBLE);
+                holder.itemView.getLayoutParams().width = MATCH_PARENT;
+                holder.itemView.getLayoutParams().height = WRAP_CONTENT;
+            }
             holder.thumbnail.setUrl(history.loadable.thumbnailUrl, dp(48), dp(48));
 
-            holder.text.setText(history.loadable.title);
+            holder.text.setText(applySearchSpans(history.loadable.title, searchQuery));
             holder.subtext.setText(String.format("/%s/ – %s",
                     history.loadable.board.code,
                     history.loadable.board.name
@@ -92,7 +115,8 @@ public class DrawerHistoryAdapter
             // all this constructs a "Loading" screen, rather than using a CrossfadeView, as the views will crossfade on a notifyDataSetChanged call
             holder.itemView.getLayoutParams().height = MATCH_PARENT;
             holder.thumbnail.setVisibility(View.GONE);
-            SpannableString s = new SpannableString(getString(R.string.loading));
+            SpannableString s =
+                    new SpannableString(getString(history == LOADING ? R.string.loading : R.string.no_history));
             s.setSpan(new StyleSpan(BOLD), 0, s.length(), 0);
             holder.text.setText(s);
             holder.text.setGravity(CENTER_VERTICAL | CENTER_HORIZONTAL);
@@ -107,7 +131,7 @@ public class DrawerHistoryAdapter
         // since views can be recycled, we need to take care of everything that could've occurred, including the loading screen
         holder.itemView.getLayoutParams().height = WRAP_CONTENT;
         holder.thumbnail.setVisibility(View.VISIBLE);
-        holder.thumbnail.setUrl(null);
+        holder.thumbnail.setUrl(null, 0, 0);
         holder.text.setText("");
         holder.text.setGravity(TOP | START | CENTER);
         holder.text.getLayoutParams().height = WRAP_CONTENT;
@@ -129,11 +153,23 @@ public class DrawerHistoryAdapter
                 : (historyList.get(position).loadable == null ? NO_ID : historyList.get(position).loadable.id);
     }
 
-    protected class HistoryCell
+    @Override
+    public void onSearchEntered(String entered) {
+        searchQuery = entered;
+        notifyDataSetChanged();
+    }
+
+    @Override
+    public void onClearPressedWhenEmpty() {
+        searchQuery = "";
+        notifyDataSetChanged();
+    }
+
+    public class HistoryCell
             extends RecyclerView.ViewHolder {
-        private ThumbnailView thumbnail;
-        private TextView text;
-        private TextView subtext;
+        private final ThumbnailView thumbnail;
+        private final TextView text;
+        private final TextView subtext;
 
         public HistoryCell(View itemView) {
             super(itemView);
@@ -158,7 +194,7 @@ public class DrawerHistoryAdapter
             });
         }
 
-        private History getHistory() {
+        public History getHistory() {
             int position = getAdapterPosition();
             if (position >= 0 && position < getItemCount()) {
                 return historyList.get(position);

@@ -54,22 +54,23 @@ import io.reactivex.disposables.Disposable;
 
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class AlbumDownloadController
         extends Controller
         implements View.OnClickListener {
+    private final int CHECK_ALL_ID = 1;
     private GridRecyclerView recyclerView;
     private FloatingActionButton download;
 
-    private List<AlbumDownloadItem> items = new ArrayList<>();
+    private final List<AlbumDownloadItem> items = new ArrayList<>();
     private Loadable loadable;
 
     @Inject
     ImageSaver imageSaver;
 
-    private CompositeDisposable compositeDisposable = new CompositeDisposable();
+    private final CompositeDisposable compositeDisposable = new CompositeDisposable();
     private boolean allChecked = true;
 
     public AlbumDownloadController(Context context) {
@@ -83,7 +84,9 @@ public class AlbumDownloadController
         view = inflate(context, R.layout.controller_album_download);
 
         updateTitle();
-        navigation.buildMenu().withItem(R.drawable.ic_select_all_white_24dp, this::onCheckAllClicked).build();
+        navigation.buildMenu()
+                .withItem(CHECK_ALL_ID, R.drawable.ic_fluent_select_all_off_24_filled, this::onCheckAllClicked)
+                .build();
 
         download = view.findViewById(R.id.download);
         download.setOnClickListener(this);
@@ -120,10 +123,10 @@ public class AlbumDownloadController
                 //generate tasks before prompting
                 List<ImageSaveTask> tasks = new ArrayList<>(items.size());
                 for (AlbumDownloadItem item : items) {
-                    if (item.postImage.isInlined || item.postImage.hidden) {
+                    if (item.postImage.isInlined || item.postImage.hidden || item.postImage.deleted) {
                         // Do not download inlined files via the Album downloads (because they often
                         // fail with SSL exceptions) and we can't really trust those files.
-                        // Also don't download filter hidden items
+                        // Also don't download filter hidden items or deleted ones
                         continue;
                     }
 
@@ -190,16 +193,17 @@ public class AlbumDownloadController
         }
         updateAllChecked();
         updateTitle();
+        updateDownloadIcon();
     }
 
     public void setPostImages(Loadable loadable, List<PostImage> postImages) {
         this.loadable = loadable;
         for (int i = 0, postImagesSize = postImages.size(); i < postImagesSize; i++) {
             PostImage postImage = postImages.get(i);
-            if (postImage.isInlined || postImage.hidden) {
+            if (postImage.isInlined || postImage.hidden || postImage.deleted) {
                 // Do not allow downloading inlined files via the Album downloads (because they often
                 // fail with SSL exceptions) and we can't really trust those files.
-                // Also don't allow filter hidden items
+                // Also don't allow filter hidden items or deleted ones
                 continue;
             }
 
@@ -210,6 +214,15 @@ public class AlbumDownloadController
     private void updateTitle() {
         navigation.title = getString(R.string.album_download_screen, getCheckCount(), items.size());
         ((ToolbarNavigationController) navigationController).toolbar.updateTitle(navigation);
+    }
+
+    private void updateDownloadIcon() {
+        ImageView downloadAllButton = navigation.findItem(CHECK_ALL_ID).getView();
+        if (allChecked) {
+            downloadAllButton.setImageResource(R.drawable.ic_fluent_select_all_off_24_filled);
+        } else {
+            downloadAllButton.setImageResource(R.drawable.ic_fluent_select_all_24_filled);
+        }
     }
 
     private void updateAllChecked() {
@@ -294,8 +307,8 @@ public class AlbumDownloadController
     private class AlbumDownloadHolder
             extends RecyclerView.ViewHolder
             implements View.OnClickListener {
-        private ImageView checkbox;
-        private PostImageThumbnailView thumbnailView;
+        private final ImageView checkbox;
+        private final PostImageThumbnailView thumbnailView;
 
         public AlbumDownloadHolder(View itemView) {
             super(itemView);
@@ -312,6 +325,7 @@ public class AlbumDownloadController
             item.checked = !item.checked;
             updateAllChecked();
             updateTitle();
+            updateDownloadIcon();
             setItemChecked(this, item.checked, true);
         }
     }
@@ -327,7 +341,7 @@ public class AlbumDownloadController
         }
 
         cell.checkbox.setImageResource(checked
-                ? R.drawable.ic_blue_checkmark_24dp
-                : R.drawable.ic_radio_button_unchecked_white_24dp);
+                ? R.drawable.ic_fluent_checkmark_circle_24_filled
+                : R.drawable.ic_fluent_record_24_filled);
     }
 }

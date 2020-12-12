@@ -21,7 +21,6 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.View;
@@ -89,7 +88,7 @@ public class ToolbarContainer
     @Nullable
     private ToolbarPresenter.TransitionAnimationStyle transitionAnimationStyle;
 
-    private Map<View, Animator> animatorSet = new HashMap<>();
+    private final Map<View, Animator> animatorSet = new HashMap<>();
 
     public ToolbarContainer(Context context) {
         this(context, null);
@@ -139,6 +138,8 @@ public class ToolbarContainer
         setArrowProgress(1f, !currentView.item.hasArrow());
 
         itemView.attach();
+
+        callback.onNavItemSet(item);
     }
 
     public void update(NavigationItem item) {
@@ -198,6 +199,8 @@ public class ToolbarContainer
         }
 
         itemView.attach();
+
+        callback.onNavItemSet(item);
     }
 
     public void stopTransition(boolean didComplete) {
@@ -393,7 +396,6 @@ public class ToolbarContainer
     }
 
     private void removeItem(@NonNull ItemView item) {
-        //noinspection ConstantConditions
         if (item == null) return;
         item.remove();
         removeView(item.view);
@@ -429,13 +431,12 @@ public class ToolbarContainer
 
         @NonNull
         private LinearLayout createNavigationLayout(NavigationItem item, Theme theme) {
-            @SuppressLint("InflateParams")
             LinearLayout menu = (LinearLayout) inflate(getContext(), R.layout.toolbar_menu, null);
             ConstraintLayout titleContainer = menu.findViewById(R.id.title_container);
 
             // Title
             final TextView titleView = menu.findViewById(R.id.title);
-            titleView.setTypeface(theme != null ? theme.mainFont : ThemeHelper.getTheme().mainFont);
+            titleView.setTypeface((theme != null ? theme : ThemeHelper.getTheme()).mainFont);
             titleView.setText(item.title);
 
             // Middle title with arrow and callback
@@ -483,7 +484,15 @@ public class ToolbarContainer
         private LinearLayout createSearchLayout(NavigationItem item) {
             SearchLayout searchLayout = new SearchLayout(getContext());
 
-            searchLayout.setCallback(input -> callback.searchInput(input));
+            searchLayout.setCallback(new SearchLayout.SearchLayoutCallback() {
+                @Override
+                public void onSearchEntered(String entered) {
+                    callback.searchInput(entered);
+                }
+
+                @Override
+                public void onClearPressedWhenEmpty() {}
+            });
 
             if (item.searchText != null) {
                 searchLayout.setText(item.searchText);
@@ -501,5 +510,7 @@ public class ToolbarContainer
 
     public interface Callback {
         void searchInput(String input);
+
+        void onNavItemSet(NavigationItem item);
     }
 }

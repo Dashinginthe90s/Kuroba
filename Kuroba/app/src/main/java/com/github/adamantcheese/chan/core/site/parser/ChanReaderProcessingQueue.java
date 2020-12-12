@@ -16,8 +16,6 @@
  */
 package com.github.adamantcheese.chan.core.site.parser;
 
-import android.annotation.SuppressLint;
-
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 
@@ -27,12 +25,11 @@ import java.util.List;
 import java.util.Map;
 
 public class ChanReaderProcessingQueue {
-    @SuppressLint("UseSparseArrays")
-    private Map<Integer, Post> cachedByNo = new HashMap<>();
-    private Loadable loadable;
+    private final Map<Integer, Post> cachedByNo = new HashMap<>();
+    private final Loadable loadable;
 
-    private List<Post> toReuse = new ArrayList<>();
-    private List<Post.Builder> toParse = new ArrayList<>();
+    private final List<Post> toReuse = new ArrayList<>();
+    private final List<Post.Builder> toParse = new ArrayList<>();
     private Post.Builder op;
 
     public ChanReaderProcessingQueue(List<Post> toReuse, Loadable loadable) {

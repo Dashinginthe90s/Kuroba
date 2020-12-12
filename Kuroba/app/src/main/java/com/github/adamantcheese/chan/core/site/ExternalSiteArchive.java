@@ -12,8 +12,10 @@ import com.github.adamantcheese.chan.core.site.common.CommonSite;
 import com.github.adamantcheese.chan.core.site.http.DeleteRequest;
 import com.github.adamantcheese.chan.core.site.http.LoginRequest;
 import com.github.adamantcheese.chan.core.site.parser.ChanReader;
+import com.github.adamantcheese.chan.core.site.parser.ChanReaderProcessingQueue;
 import com.github.adamantcheese.chan.core.site.parser.CommentParser.ResolveLink;
 import com.github.adamantcheese.chan.core.site.parser.CommentParser.ThreadLink;
+import com.github.adamantcheese.chan.core.site.parser.PostParser;
 
 import java.util.Collections;
 import java.util.List;
@@ -28,16 +30,23 @@ public abstract class ExternalSiteArchive
     public List<String> boardCodes;
     public boolean searchEnabled;
 
-    public ExternalSiteArchive(String domain, String name, List<String> boardCodes, boolean searchEnabled) {
+    public ExternalSiteArchive(
+            String domain, String name, List<String> boardCodes, boolean searchEnabled
+    ) {
         this.domain = domain;
         this.name = name;
         this.boardCodes = boardCodes;
         this.searchEnabled = searchEnabled;
     }
 
-    public Loadable getArchiveLoadable(String boardCode, int opNo, int postNo) {
-        Loadable l = Loadable.forThread(board(boardCode), opNo, "", false);
-        if (opNo != postNo) l.markedNo = postNo;
+    public Loadable getArchiveLoadable(Loadable op, int postNo) {
+        Loadable l = Loadable.forThread(board(op.boardCode), op.no, op.title, false);
+        if (op.no != postNo) l.markedNo = postNo;
+        if (!(op.site instanceof ExternalSiteArchive) && op.no == postNo) {
+            // copy the scroll location
+            l.listViewIndex = op.listViewIndex;
+            l.listViewTop = op.listViewTop;
+        }
         return l;
     }
 
@@ -100,7 +109,7 @@ public abstract class ExternalSiteArchive
     }
 
     @Override
-    public abstract ChanReader chanReader();
+    public abstract ExternalArchiveChanReader chanReader();
 
     @Override
     public SiteActions actions() {
@@ -155,10 +164,10 @@ public abstract class ExternalSiteArchive
     @NonNull
     @Override
     public ChunkDownloaderSiteProperties getChunkDownloaderSiteProperties() {
-        return new ChunkDownloaderSiteProperties(false, false);
+        return new ChunkDownloaderSiteProperties(Integer.MAX_VALUE, false, false);
     }
 
-    public abstract class ArchiveEndpoints
+    public abstract static class ArchiveEndpoints
             implements SiteEndpoints {
 
         @Override
@@ -252,6 +261,33 @@ public abstract class ExternalSiteArchive
             return Loadable.emptyLoadable();
         }
 
+        /**
+         * Given a source ResolveLink, turn it into a regular ThreadLink that can be used by the application without any additional API calls.
+         * Originally added for FoolFuuka, because of how that archiver works.
+         *
+         * @param sourceLink The source of the link that needs resolution
+         * @param reader     The JSON of the API query
+         * @return A ThreadLink that the ResolveLink is processed into
+         */
         public abstract ThreadLink resolveToThreadLink(ResolveLink sourceLink, JsonReader reader);
+    }
+
+    public abstract static class ExternalArchiveChanReader
+            implements ChanReader {
+        @Override
+        public abstract PostParser getParser();
+
+        @Override
+        public abstract void loadThread(JsonReader reader, ChanReaderProcessingQueue queue)
+                throws Exception;
+
+        @Override
+        public void loadCatalog(JsonReader reader, ChanReaderProcessingQueue queue) {
+            // external archives don't support catalogs
+        }
+
+        @Override
+        public abstract void readPostObject(JsonReader reader, ChanReaderProcessingQueue queue)
+                throws Exception;
     }
 }

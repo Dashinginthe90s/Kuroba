@@ -40,7 +40,7 @@ import com.github.adamantcheese.chan.core.site.common.CommonDataStructs.Boards;
 import com.github.adamantcheese.chan.ui.helper.BoardHelper;
 import com.github.adamantcheese.chan.ui.layout.BoardAddLayout;
 import com.github.adamantcheese.chan.ui.view.CrossfadeView;
-import com.github.adamantcheese.chan.ui.view.DividerItemDecoration;
+import com.github.adamantcheese.chan.utils.RecyclerUtils;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
 
@@ -49,7 +49,6 @@ import javax.inject.Inject;
 import static android.text.TextUtils.isEmpty;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
-import static android.widget.LinearLayout.VERTICAL;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
@@ -70,33 +69,33 @@ public class BoardSetupController
 
     private Site site;
 
-    private ItemTouchHelper.SimpleCallback touchHelperCallback =
-            new ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP | ItemTouchHelper.DOWN,
-                    ItemTouchHelper.RIGHT | ItemTouchHelper.LEFT
-            ) {
-                @Override
-                public boolean onMove(
-                        RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, RecyclerView.ViewHolder target
-                ) {
-                    int from = viewHolder.getAdapterPosition();
-                    int to = target.getAdapterPosition();
+    private final ItemTouchHelper.SimpleCallback touchHelperCallback = new ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP | ItemTouchHelper.DOWN,
+            ItemTouchHelper.RIGHT | ItemTouchHelper.LEFT
+    ) {
+        @Override
+        public boolean onMove(
+                RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, RecyclerView.ViewHolder target
+        ) {
+            int from = viewHolder.getAdapterPosition();
+            int to = target.getAdapterPosition();
 
-                    if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) {
-                        return false;
-                    }
+            if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) {
+                return false;
+            }
 
-                    presenter.move(from, to);
+            presenter.move(from, to);
 
-                    return true;
-                }
+            return true;
+        }
 
-                @Override
-                public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
-                    int position = viewHolder.getAdapterPosition();
+        @Override
+        public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction) {
+            int position = viewHolder.getAdapterPosition();
 
-                    presenter.removeBoard(position);
-                }
-            };
+            presenter.removeBoard(position);
+        }
+    };
 
     public BoardSetupController(Context context) {
         super(context);
@@ -123,7 +122,7 @@ public class BoardSetupController
 
         // View setup
         savedBoardsRecycler.setAdapter(savedAdapter);
-        savedBoardsRecycler.addItemDecoration(new DividerItemDecoration(context, VERTICAL));
+        savedBoardsRecycler.addItemDecoration(RecyclerUtils.getBottomDividerDecoration(context));
 
         itemTouchHelper = new ItemTouchHelper(touchHelperCallback);
         itemTouchHelper.attachToRecyclerView(savedBoardsRecycler);
@@ -154,7 +153,6 @@ public class BoardSetupController
 
     @Override
     public void showAddDialog() {
-        @SuppressLint("InflateParams")
         final BoardAddLayout boardAddLayout = (BoardAddLayout) inflate(context, R.layout.layout_board_add, null);
 
         boardAddLayout.setPresenter(presenter);
@@ -256,8 +254,8 @@ public class BoardSetupController
 
     private class SavedBoardHolder
             extends RecyclerView.ViewHolder {
-        private TextView text;
-        private TextView description;
+        private final TextView text;
+        private final TextView description;
 
         @SuppressLint("ClickableViewAccessibility")
         public SavedBoardHolder(View itemView) {

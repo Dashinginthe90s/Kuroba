@@ -24,12 +24,14 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.github.adamantcheese.chan.R;
+import com.github.adamantcheese.chan.core.model.ChanThread;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.presenter.ThreadPresenter;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.adapter.PostAdapter;
+import com.github.adamantcheese.chan.ui.adapter.PostsFilter;
 import com.github.adamantcheese.chan.ui.cell.PostCellInterface;
 import com.github.adamantcheese.chan.ui.helper.PostPopupHelper;
 import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
@@ -43,8 +45,8 @@ import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class PostRepliesController
         extends BaseFloatingController {
-    private PostPopupHelper postPopupHelper;
-    private ThreadPresenter presenter;
+    private final PostPopupHelper postPopupHelper;
+    private final ThreadPresenter presenter;
 
     private boolean first = true;
 
@@ -134,23 +136,8 @@ public class PostRepliesController
             }
 
             @Override
-            public boolean isSelected(Post post) {
-                return false;
-            }
-
-            @Override
             public int getMarkedNo() {
                 return displayingData.forPostNo;
-            }
-
-            @Override
-            public boolean showDivider(int position) {
-                return position < getDisplayList().size() - 1;
-            }
-
-            @Override
-            public ChanSettings.PostViewMode getPostViewMode() {
-                return ChanSettings.PostViewMode.LIST;
             }
 
             @Override
@@ -163,9 +150,11 @@ public class PostRepliesController
                 return false;
             }
         };
+        adapter.setPostViewMode(ChanSettings.PostViewMode.LIST);
         recyclerView.setAdapter(adapter);
-        recyclerView.setItemViewCacheSize(5);
-        adapter.setThread(loadable, displayingData.posts, null, true);
+        adapter.setThread(new ChanThread(loadable, displayingData.posts),
+                new PostsFilter(PostsFilter.Order.BUMP, null)
+        );
         adapter.setLastSeenIndicatorPosition(-1); //disable last seen indicator inside of reply popups
         LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerView.getLayoutManager();
         layoutManager.scrollToPositionWithOffset(data.listViewIndex, data.listViewTop);

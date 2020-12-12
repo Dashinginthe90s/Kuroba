@@ -148,7 +148,6 @@ Re-enable this permission in the app settings if you permanently disabled it."</
     <string name="open_link_failed">No applications were found to open this link</string>
     <string name="open_file_picker_failed">No file picker applications were found</string>
     <string name="image_pick_delegate_select_file_picker">Select a file picker to open a file…</string>
-    <string name="action_confirm_exit">Press back twice quickly to exit</string>
 
     <string name="thumbnail_load_failed_network">Error</string>
     <string name="image_preview_failed">Failed to show image</string>
@@ -174,12 +173,12 @@ Re-enable this permission in the app settings if you permanently disabled it."</
     <string name="thread_empty_select">Please select a thread</string>
     <string name="thread_up_down_hint">Scroll to top/bottom</string>
     <string name="thread_pin_hint">Bookmark this thread</string>
+    <string name="thread_album_hint">View thread album</string>
 
     <string name="thread_view_local_archive">View local archive</string>
     <string name="thread_view_external_archive">View external archive</string>
     <string name="thread_empty_setup_title">Nothing to show</string>
     <string name="thread_empty_setup_body">Add a site to begin browsing</string>
-    <string name="thread_empty_setup_hint">Add a site here</string>
     <string name="setup_sites_title">Set up sites</string>
 
     <string name="setup_sites_empty">No sites added</string>
@@ -381,12 +380,12 @@ Enabled filters have priority from top to bottom in your list. Filter precedence
     <string name="settings_filters">Filters</string>
 
     <!-- Thread watcher -->
-    <string name="setting_watch_summary_enabled">Watching bookmarked threads</string>
+    <string name="setting_watch_summary_enabled">On</string>
+    <string name="setting_watch_summary_enabled_background">On, in background</string>
     <string name="setting_watch_summary_disabled">Off</string>
 
     <string name="settings_screen_watch">Thread watcher settings</string>
     <string name="settings_group_watch">Settings</string>
-    <string name="setting_watch_info">To watch bookmarks for new posts, turn the thread watcher on.</string>
     <string name="setting_watch_enable_background">Enable in background</string>
     <string name="setting_watch_enable_background_description">Watch bookmarks when app is in the background</string>
     <string name="setting_watch_background_timeout">Background update interval</string>
@@ -575,7 +574,7 @@ Don't have a 4chan Pass?<br>
     <string name="reencode_image_re_encode_image_text">Re-encode %s image as</string>
     <string name="reencode_image_as_jpeg">JPEG</string>
     <string name="reencode_image_as_png">PNG</string>
-    <string name="click_image_for_extra_options">Click image for extra options</string>
+    <string name="tap_image_for_extra_options">Tap image for extra options</string>
 
     <string name="settings_import_export">Import/Export</string>
     <string name="settings_import_export_description">Import/export settings/pins, etc.</string>
@@ -618,7 +617,7 @@ Don't have a 4chan Pass?<br>
     <string name="reply_comment_empty">Comment body is empty.</string>
     <string name="filter_removed_undo">Removed filter %1$s</string>
     <string name="image_url_get_attempt">Getting image from clipboard URL…</string>
-    <string name="image_url_get_failed">Failed to get image from clipboard, reason = %1$s</string>
+    <string name="image_url_get_failed">Failed to get image from clipboard; %1$s</string>
     <string name="image_url_get_success">Got image from clipboard</string>
     <string name="setting_shift_post">Shift post format</string>
     <string name="setting_shift_post_description">Shift the comment of long posts to start below the thumbnail</string>
@@ -678,8 +677,6 @@ Don't have a 4chan Pass?<br>
     <string name="image_saver_could_not_figure_out_save_location">Couldn\'t figure out save location</string>
     <string name="settings_captcha_setup">Captcha Settings</string>
     <string name="settings_captcha_setup_description">Captcha settings are per-site configurable. Tap for site setup.</string>
-    <string name="settings_concurrent_file_downloading_name">Concurrent chunked file downloading</string>
-    <string name="settings_concurrent_file_downloading_description">Split file downloads into chunks and download them concurrently, when possible; makes loading times shorter when viewing them in the gallery. Determines the number of chunks to split files into.</string>
     <string name="image_saver_canceled_by_user">Canceled by user</string>
     <string name="image_saver_unknown_location">Unknown location</string>
     <string name="image_saver_failed_to_save_image">Failed to save the image. Reason: %s</string>
@@ -702,7 +699,7 @@ Don't have a 4chan Pass?<br>
     <string name="report_controller_title_cannot_be_empty_error">Title cannot be empty!</string>
     <string name="report_controller_description_cannot_be_empty_error">If description is empty, logs cannot be empty!</string>
     <string name="report_controller_logs_are_empty_error">\"Attach logs\" option is checked, but logs are empty!</string>
-    <string name="report_controller_report_sent">Sent \;)</string>
+    <string name="report_controller_report_sent">Sent report!</string>
     <string name="report_controller_error_while_trying_to_send_report">Error while trying to send report: %1$s</string>
 
     <string name="hsid_cookie_text">HSID</string>
@@ -770,7 +767,7 @@ Don't have a 4chan Pass?<br>
 
     <string name="file_has_orientation_exif_data">This file has orientation data. Consider re-encoding it before posting.</string>
     <string name="file_type_may_not_be_supported">This file may not be supported on this imageboard. Consider re-encoding it before posting.</string>
-    <string name="file_cannot_be_reencoded">Image doesn\'t support re-encoding. You can change the filename by long pressing the preview image.</string>
+    <string name="file_cannot_be_reencoded">Image doesn\'t support re-encoding.</string>
 
     <string name="view_my_posts">View my posts</string>
     <string name="no_saved_posts_for_current_thread">You haven\'t posted in this thread!</string>
@@ -785,4 +782,14 @@ Don't have a 4chan Pass?<br>
     <string name="apply_image_filter_to_post_description">Applies image hash filtering to posts themselves as opposed to images</string>
     <string name="yt_api_key_dialog">Youtube API Key</string>
     <string name="yt_api_key_dialog_description">Without a key parsing is still possible, but may not be reliable. You can use your own key, or snag the one from 4chanX.</string>
+
+    <string name="clear_history">Long press to clear all history!</string>
+    <string name="no_history">No history available.</string>
+
+    <string name="filter_add_hint">Add a filter</string>
+    <string name="filter_toggle_hint">Toggle all filters on/off</string>
+    <string name="album_download_hint">Download multiple images</string>
+
+    <string name="reply_filename_hint">Tap to randomize filename</string>
+    <string name="reply_spoiler_hint">Toggle if posting as a spoiler</string>
 </resources>

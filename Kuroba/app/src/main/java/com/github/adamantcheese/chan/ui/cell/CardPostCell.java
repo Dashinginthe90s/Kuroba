@@ -35,6 +35,7 @@ import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.repository.PageRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.common.CommonDataStructs.ChanPage;
+import com.github.adamantcheese.chan.features.embedding.EmbeddingEngine;
 import com.github.adamantcheese.chan.features.embedding.EmbeddingEngine.InvalidateFunction;
 import com.github.adamantcheese.chan.ui.layout.FixedRatioLinearLayout;
 import com.github.adamantcheese.chan.ui.theme.Theme;
@@ -45,23 +46,27 @@ import com.github.adamantcheese.chan.ui.view.ThumbnailView;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import okhttp3.Call;
 
 import static com.github.adamantcheese.chan.ui.adapter.PostsFilter.Order.isNotBumpOrder;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
+import static com.github.adamantcheese.chan.utils.StringUtils.applySearchSpans;
 
 public class CardPostCell
         extends CardView
-        implements PostCellInterface, View.OnClickListener, InvalidateFunction {
+        implements PostCellInterface, InvalidateFunction {
     private static final int COMMENT_MAX_LINES = 10;
 
     private boolean bound;
     private Post post;
     private PostCellInterface.PostCellCallback callback;
+    private boolean highlighted = false;
     private boolean compact = false;
-    private Theme theme;
+    private String searchQuery;
 
     private PostImageThumbnailView thumbView;
     private TextView title;
@@ -69,9 +74,8 @@ public class CardPostCell
     private TextView replies;
     private ImageView options;
     private View filterMatchColor;
-    private RecyclerView recyclerView;
 
-    private List<Call> embedCalls = new ArrayList<>();
+    private final List<Call> embedCalls = new CopyOnWriteArrayList<>();
 
     public CardPostCell(Context context) {
         super(context);
@@ -90,14 +94,14 @@ public class CardPostCell
         super.onFinishInflate();
 
         thumbView = findViewById(R.id.thumbnail);
-        thumbView.setOnClickListener(this);
+        thumbView.setOnClickListener((view) -> callback.onThumbnailClicked(post.image(), (ThumbnailView) view));
         title = findViewById(R.id.title);
         comment = findViewById(R.id.comment);
         replies = findViewById(R.id.replies);
         options = findViewById(R.id.options);
         filterMatchColor = findViewById(R.id.filter_match_color);
 
-        setOnClickListener(this);
+        setOnClickListener((view) -> callback.onPostClicked(post));
 
         if (!isInEditMode()) {
             setCompact(compact);
@@ -142,70 +146,39 @@ public class CardPostCell
         menu.show();
     }
 
-    @Override
-    public void onClick(View v) {
-        if (v == thumbView) {
-            callback.onThumbnailClicked(post.image(), thumbView);
-        } else if (v == this) {
-            callback.onPostClicked(post);
-        }
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-
-        for (Call call : embedCalls) {
-            call.cancel();
-        }
-        embedCalls.clear();
-
-        bound = false;
-    }
-
-    @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-
-        if (post != null && !bound) {
-            bindPost(theme, post);
-        }
-    }
-
     public void setPost(
             Loadable loadable,
             final Post post,
             PostCellInterface.PostCellCallback callback,
             boolean inPopup,
             boolean highlighted,
-            boolean selected,
             int markedNo,
-            boolean showDivider,
             ChanSettings.PostViewMode postViewMode,
             boolean compact,
+            String searchQuery,
             Theme theme,
             RecyclerView attachedTo
     ) {
-        if (this.post == post) {
-            return;
-        }
-
         if (this.post != null && bound) {
             bound = false;
+            thumbView.setPostImage(null);
+            for (Call c : embedCalls) {
+                c.cancel();
+            }
+            embedCalls.clear();
+            findViewById(R.id.embed_spinner).setVisibility(GONE);
             this.post = null;
         }
 
         this.post = post;
+        this.highlighted = highlighted;
         this.callback = callback;
-        this.theme = theme;
-        this.recyclerView = attachedTo;
+        this.searchQuery = searchQuery;
 
         bindPost(theme, post);
 
-        if (this.compact != compact) {
-            this.compact = compact;
-            setCompact(compact);
-        }
+        this.compact = compact;
+        setCompact(compact);
     }
 
     public Post getPost() {
@@ -224,6 +197,12 @@ public class CardPostCell
     private void bindPost(Theme theme, Post post) {
         bound = true;
 
+        if (highlighted || post.isSavedReply) {
+            setBackgroundColor(getAttrColor(getContext(), R.attr.highlight_color));
+        } else {
+            setBackgroundColor(getAttrColor(getContext(), R.attr.backcolor));
+        }
+
         if (post.image() != null && !ChanSettings.textOnly.get()) {
             thumbView.setVisibility(VISIBLE);
             thumbView.setPostImage(post.image());
@@ -239,22 +218,12 @@ public class CardPostCell
             filterMatchColor.setVisibility(GONE);
         }
 
-        if (!TextUtils.isEmpty(post.subjectSpan)) {
-            title.setVisibility(VISIBLE);
-            title.setText(post.subjectSpan);
-        } else {
-            title.setVisibility(GONE);
-            title.setText(null);
-        }
+        title.setVisibility(TextUtils.isEmpty(post.subjectSpan) ? GONE : VISIBLE);
+        title.setText(TextUtils.isEmpty(post.subjectSpan) ? null : applySearchSpans(post.subjectSpan, searchQuery));
 
-        if (ChanSettings.getBoardColumnCount() != 1) {
-            comment.setMaxLines(COMMENT_MAX_LINES);
-            comment.setEllipsize(TextUtils.TruncateAt.END);
-        } else {
-            comment.setMaxLines(Integer.MAX_VALUE);
-            comment.setEllipsize(null);
-        }
-        comment.setText(post.comment);
+        comment.setMaxLines(ChanSettings.getBoardColumnCount() != 1 ? COMMENT_MAX_LINES : Integer.MAX_VALUE);
+        comment.setEllipsize(ChanSettings.getBoardColumnCount() != 1 ? TextUtils.TruncateAt.END : null);
+        comment.setText(applySearchSpans(post.comment, searchQuery));
 
         String status = getString(R.string.card_stats, post.getReplies(), post.getImagesCount());
         if (!ChanSettings.neverShowPages.get()) {
@@ -266,28 +235,18 @@ public class CardPostCell
 
         replies.setText(status);
 
+        findViewById(R.id.embed_spinner).setVisibility(GONE);
+        embedCalls.addAll(EmbeddingEngine.getInstance().embed(theme, post, this));
         if (!embedCalls.isEmpty()) {
-            for (Call call : embedCalls) {
-                call.cancel();
-            }
-            embedCalls.clear();
-        }
-        embedCalls.addAll(callback.getEmbeddingEngine().embed(theme, post, this));
-        if (embedCalls.isEmpty()) {
-            findViewById(R.id.embed_spinner).setVisibility(GONE);
+            findViewById(R.id.embed_spinner).setVisibility(VISIBLE);
         }
     }
 
     @Override
-    public void invalidateView(boolean simple) {
-        findViewById(R.id.embed_spinner).setVisibility(GONE);
-        invalidate();
-        if (simple) return;
-        if (!recyclerView.isComputingLayout() && recyclerView.getAdapter() != null) {
-            recyclerView.getAdapter().notifyItemChanged(recyclerView.getChildAdapterPosition(this));
-        } else {
-            post(() -> invalidateView(false));
-        }
+    public void invalidateView(Theme theme, Post post) {
+        if (!bound || !this.post.equals(post)) return;
+        embedCalls.clear();
+        bindPost(theme, post);
     }
 
     private void setCompact(boolean compact) {
@@ -302,8 +261,6 @@ public class CardPostCell
         title.setPadding(p, p, p, 0);
         comment.setPadding(p, p, p, 0);
         replies.setPadding(p, p / 2, p, p);
-
-        int optionsPadding = compact ? 0 : dp(5);
-        options.setPadding(0, optionsPadding, optionsPadding, 0);
+        options.setPadding(p, p / 2, p / 2, p / 2);
     }
 }

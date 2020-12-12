@@ -33,10 +33,11 @@ import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostLinkable;
 import com.github.adamantcheese.chan.ui.text.AbsoluteSizeSpanHashed;
-import com.github.adamantcheese.chan.ui.text.BackgroundColorSpanHashed;
+import com.github.adamantcheese.chan.ui.text.CodeBackgroundSpan;
 import com.github.adamantcheese.chan.ui.text.CustomTypefaceSpan;
 import com.github.adamantcheese.chan.ui.text.ForegroundColorSpanHashed;
 import com.github.adamantcheese.chan.ui.theme.Theme;
+import com.github.adamantcheese.chan.utils.StringUtils;
 
 import org.jsoup.nodes.Element;
 
@@ -53,10 +54,6 @@ public class StyleRule {
         RED
     }
 
-    public enum BackgroundColor {
-        CODE
-    }
-
     private final List<String> blockElements = Arrays.asList("p", "div");
 
     public static StyleRule tagRule(String tag) {
@@ -66,22 +63,22 @@ public class StyleRule {
     private String tag;
     private List<String> classes;
 
-    private List<Action> actions = new ArrayList<>();
+    private final List<Action> actions = new ArrayList<>();
 
     private ForegroundColor foregroundColor = null;
-    private BackgroundColor backgroundColor = null;
     private boolean strikeThrough;
     private boolean underline;
     private boolean bold;
     private boolean italic;
     private boolean monospace;
+    private boolean code;
+    private boolean trimEndWhitespace;
     private Typeface typeface;
     private int size = 0;
 
     private PostLinkable.Type link = null;
 
     private boolean nullify;
-    private boolean linkify;
 
     private String justText = null;
 
@@ -120,11 +117,6 @@ public class StyleRule {
         return this;
     }
 
-    public StyleRule backgroundColor(BackgroundColor backgroundColor) {
-        this.backgroundColor = backgroundColor;
-        return this;
-    }
-
     public StyleRule link(PostLinkable.Type link) {
         this.link = link;
         return this;
@@ -155,6 +147,16 @@ public class StyleRule {
         return this;
     }
 
+    public StyleRule code() {
+        code = true;
+        return this;
+    }
+
+    public StyleRule trimEndWhitespace() {
+        trimEndWhitespace = true;
+        return this;
+    }
+
     public StyleRule typeface(Typeface typeface) {
         this.typeface = typeface;
         return this;
@@ -167,11 +169,6 @@ public class StyleRule {
 
     public StyleRule nullify() {
         nullify = true;
-        return this;
-    }
-
-    public StyleRule linkify() {
-        linkify = true;
         return this;
     }
 
@@ -220,10 +217,6 @@ public class StyleRule {
             spansToApply.add(new ForegroundColorSpanHashed(getForegroundColor(theme, foregroundColor)));
         }
 
-        if (backgroundColor != null) {
-            spansToApply.add(new BackgroundColorSpanHashed(getBackgroundColor(theme, backgroundColor)));
-        }
-
         if (strikeThrough) {
             spansToApply.add(new StrikethroughSpan());
         }
@@ -242,6 +235,10 @@ public class StyleRule {
 
         if (monospace) {
             spansToApply.add(new TypefaceSpan("monospace"));
+        }
+
+        if (code) {
+            spansToApply.add(new CodeBackgroundSpan(theme));
         }
 
         if (typeface != null) {
@@ -267,8 +264,8 @@ public class StyleRule {
             result = TextUtils.concat(result, "\n");
         }
 
-        if (linkify) {
-            CommentParserHelper.detectLinks(theme, post, result.toString(), new SpannableStringBuilder(result));
+        if (trimEndWhitespace) {
+            result = StringUtils.chomp(new SpannableStringBuilder(result));
         }
 
         return result;
@@ -285,13 +282,6 @@ public class StyleRule {
             default:
                 return 0;
         }
-    }
-
-    private int getBackgroundColor(Theme theme, BackgroundColor backgroundColor) {
-        if (backgroundColor == BackgroundColor.CODE) {
-            return getAttrColor(theme.resValue, R.attr.backcolor_secondary);
-        }
-        return 0;
     }
 
     private SpannableString applySpan(CharSequence text, List<Object> spans) {

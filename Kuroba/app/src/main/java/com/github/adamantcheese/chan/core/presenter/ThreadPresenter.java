@@ -16,7 +16,6 @@
  */
 package com.github.adamantcheese.chan.core.presenter;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.text.TextUtils;
 import android.view.View;
@@ -31,7 +30,6 @@ import androidx.appcompat.app.AlertDialog;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
 import com.github.adamantcheese.chan.core.cache.CacheHandler;
-import com.github.adamantcheese.chan.core.database.DatabaseHideManager;
 import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager;
 import com.github.adamantcheese.chan.core.database.DatabaseSavedReplyManager;
 import com.github.adamantcheese.chan.core.database.DatabaseUtils;
@@ -75,7 +73,6 @@ import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.LayoutUtils;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.adamantcheese.chan.utils.PostUtils;
-import com.github.adamantcheese.chan.utils.StringUtils;
 import com.github.k1rakishou.fsaf.FileManager;
 import com.github.k1rakishou.fsaf.file.RawFile;
 
@@ -97,7 +94,7 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.openLink;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.postToEventBus;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.setClipboardContent;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.shareLink;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.sp;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 import static com.github.adamantcheese.chan.utils.PostUtils.getReadableFileSize;
@@ -161,22 +158,15 @@ public class ThreadPresenter
     private BoardManager boardManager;
 
     @Inject
-    private DatabaseHideManager databaseHideManager;
-
-    @Inject
     private FilterWatchManager filterWatchManager;
 
-    @Inject
-    private EmbeddingEngine embeddingEngine;
-
-    private ThreadPresenterCallback threadPresenterCallback;
+    private final ThreadPresenterCallback threadPresenterCallback;
     private Loadable loadable;
     private ChanThreadLoader chanLoader;
     private boolean searchOpen;
     private String searchQuery;
-    private boolean forcePageUpdate;
     private PostsFilter.Order order = PostsFilter.Order.BUMP;
-    private Context context;
+    private final Context context;
     private List<FloatingMenuItem<Integer>> filterMenu;
     private List<FloatingMenuItem<Integer>> copyMenu;
     //endregion
@@ -201,7 +191,7 @@ public class ThreadPresenter
             this.loadable = loadable;
 
             loadable.lastLoadDate = GregorianCalendar.getInstance().getTime();
-            DatabaseUtils.runTaskAsync(databaseLoadableManager.updateLoadable(loadable));
+            DatabaseUtils.runTaskAsync(databaseLoadableManager.updateLoadable(loadable, false));
 
             chanLoader = chanLoaderManager.obtain(loadable, this);
             threadPresenterCallback.showLoading();
@@ -220,7 +210,7 @@ public class ThreadPresenter
     }
 
     public void updateDatabaseLoadable() {
-        DatabaseUtils.runTaskAsync(databaseLoadableManager.updateLoadable(loadable));
+        DatabaseUtils.runTaskAsync(databaseLoadableManager.updateLoadable(loadable, false));
     }
 
     private void stopSavingThreadIfItIsBeingSaved(Loadable loadable) {
@@ -309,15 +299,15 @@ public class ThreadPresenter
             searchQuery = null;
         }
 
-        if (chanLoader != null && chanLoader.getThread() != null && !visible) {
-            showPosts(true);
+        if (isBound() && chanLoader.getThread() != null && !visible) {
+            showPosts();
         }
     }
 
     public void onSearchEntered(String entered) {
         searchQuery = entered;
-        if (chanLoader != null && chanLoader.getThread() != null) {
-            showPosts(true);
+        if (isBound() && chanLoader.getThread() != null) {
+            showPosts();
             if (TextUtils.isEmpty(entered)) {
                 threadPresenterCallback.setSearchStatus(null, true, false);
             } else {
@@ -329,7 +319,7 @@ public class ThreadPresenter
     public void setOrder(PostsFilter.Order order) {
         if (this.order != order) {
             this.order = order;
-            if (chanLoader != null && chanLoader.getThread() != null) {
+            if (isBound() && chanLoader.getThread() != null) {
                 scrollTo(0, false);
                 showPosts();
             }
@@ -337,7 +327,7 @@ public class ThreadPresenter
     }
 
     public void refreshUI() {
-        showPosts(true);
+        showPosts();
     }
 
     public synchronized void showAlbum() {
@@ -367,11 +357,6 @@ public class ThreadPresenter
         return loadable;
     }
 
-    @Override
-    public EmbeddingEngine getEmbeddingEngine() {
-        return embeddingEngine;
-    }
-
     /*
      * ChanThreadLoader callbacks
      */
@@ -382,6 +367,8 @@ public class ThreadPresenter
         if (isBound()) {
             if (isWatching()) {
                 chanLoader.setTimer();
+            } else {
+                chanLoader.clearTimer();
             }
         } else {
             Logger.e(this, "onChanLoaderData when not bound!");
@@ -396,36 +383,37 @@ public class ThreadPresenter
         }
 
         if (loadable.isThreadMode()) {
-            int lastLoaded = loadable.lastLoaded;
+            List<Post> posts = result.getPosts();
+            int postsCount = posts.size();
+
+            // calculate how many new posts since last load
             int more = 0;
-            if (lastLoaded > 0) {
-                for (Post p : result.getPosts()) {
-                    if (p.no == lastLoaded) {
-                        more = result.getPostsCount() - result.getPosts().indexOf(p) - 1;
-                        break;
-                    }
+            for (int i = 0; i < postsCount; i++) {
+                Post p = posts.get(i);
+                if (p.no == loadable.lastLoaded) {
+                    // end index minus last loaded index
+                    more = (postsCount - 1) - i;
+                    break;
                 }
             }
 
-            loadable.lastLoaded = result.getPosts().get(result.getPostsCount() - 1).no;
+            // update last loaded post
+            loadable.lastLoaded = posts.get(postsCount - 1).no;
+
+            // this loadable is fresh, for new post reasons set it to the last loaded
             if (loadable.lastViewed == -1) {
                 loadable.lastViewed = loadable.lastLoaded;
             }
 
             if (more > 0 && loadable.no == result.getLoadable().no) {
-                threadPresenterCallback.showNewPostsNotification(true, more);
-                //deal with any "requests" for a page update
-                if (forcePageUpdate) {
-                    PageRepository.forceUpdateForBoard(loadable.board);
-                    forcePageUpdate = false;
-                }
+                threadPresenterCallback.showNewPostsSnackbar(more);
             }
         }
 
         if (loadable.markedNo >= 0) {
             Post markedPost = PostUtils.findPostById(loadable.markedNo, chanLoader.getThread());
             if (markedPost != null) {
-                highlightPost(markedPost);
+                highlightPostNo(markedPost.no);
                 if (BackgroundUtils.isInForeground()) {
                     scrollToPost(markedPost, false);
                 }
@@ -452,7 +440,7 @@ public class ThreadPresenter
     @Override
     public void onListScrolledToBottom() {
         if (!isBound()) return;
-        if (chanLoader.getThread() != null && loadable.isThreadMode() && chanLoader.getThread().getPostsCount() > 0) {
+        if (chanLoader.getThread() != null && loadable.isThreadMode() && chanLoader.getThread().getPosts().size() > 0) {
             List<Post> posts = chanLoader.getThread().getPosts();
             loadable.lastViewed = posts.get(posts.size() - 1).no;
         }
@@ -462,7 +450,7 @@ public class ThreadPresenter
             watchManager.onBottomPostViewed(pin);
         }
 
-        threadPresenterCallback.showNewPostsNotification(false, -1);
+        threadPresenterCallback.showNewPostsSnackbar(-1);
 
         // Update the last seen indicator
         showPosts();
@@ -482,8 +470,8 @@ public class ThreadPresenter
                 }
             }
         }
-        //-1 is fine here because we add 1 down the chain to make it 0 if there's no last viewed
-        threadPresenterCallback.smoothScrollNewPosts(position);
+        // scroll to post after last viewed
+        threadPresenterCallback.smoothScrollNewPosts(position + 1);
     }
 
     public void scrollTo(int displayPosition, boolean smooth) {
@@ -526,12 +514,8 @@ public class ThreadPresenter
         }
     }
 
-    public void highlightPost(Post post) {
-        threadPresenterCallback.highlightPost(post);
-    }
-
-    public void selectPost(int post) {
-        threadPresenterCallback.selectPost(post);
+    public void highlightPostNo(int postNo) {
+        threadPresenterCallback.highlightPostNo(postNo);
     }
 
     public void selectPostImage(PostImage postImage) {
@@ -540,7 +524,7 @@ public class ThreadPresenter
             for (PostImage image : post.images) {
                 if (image == postImage) {
                     scrollToPost(post, false);
-                    highlightPost(post);
+                    highlightPostNo(post.no);
                     return;
                 }
             }
@@ -566,7 +550,6 @@ public class ThreadPresenter
     public void onPostClicked(Post post) {
         if (!isBound()) return;
         if (loadable.isCatalogMode()) {
-            highlightPost(post);
             threadPresenterCallback.showThread(Loadable.forThread(post.board,
                     post.no,
                     PostHelper.getTitle(post, loadable)
@@ -582,7 +565,7 @@ public class ThreadPresenter
                 showPosts();
                 threadPresenterCallback.setSearchStatus(null, false, true);
                 threadPresenterCallback.showSearch(false);
-                highlightPost(post);
+                highlightPostNo(post.no);
                 scrollToPost(post, false);
             } else {
                 threadPresenterCallback.postClicked(post);
@@ -723,8 +706,8 @@ public class ThreadPresenter
                     //need to trim off starting spaces for certain media links if embedded
                     String trimmedUrl = (key.charAt(0) == ' ' && key.charAt(1) == ' ') ? key.substring(2) : key;
                     boolean speciallyProcessed = false;
-                    for (Embedder e : embeddingEngine.embedders) {
-                        if (StringUtils.containsAny(value, e.getShortRepresentations())) {
+                    for (Embedder<?> e : EmbeddingEngine.getInstance().getEmbedders()) {
+                        if (e.shouldEmbed(value, loadable.board)) {
                             if (added.contains(trimmedUrl)) continue;
                             keys.add(PostHelper.prependIcon(context, trimmedUrl, e.getIconBitmap(), sp(16)));
                             added.add(trimmedUrl);
@@ -740,7 +723,7 @@ public class ThreadPresenter
                 AlertDialog dialog = new AlertDialog.Builder(context).create();
 
                 ListView clickables = new ListView(context);
-                clickables.setAdapter(new ArrayAdapter<>(context, android.R.layout.simple_list_item_1, keys));
+                clickables.setAdapter(new ArrayAdapter<>(context, R.layout.simple_list_item, keys));
                 clickables.setOnItemClickListener((parent, view, position, id1) -> {
                     onPostLinkableClicked(post, new ArrayList<>(post.linkables).get(position));
                     dialog.dismiss();
@@ -883,13 +866,7 @@ public class ThreadPresenter
                 if (chanLoader.getThread().getLoadable().mode == Loadable.Mode.CATALOG) {
                     threadPresenterCallback.hideThread(post, post.no, hide);
                 } else {
-                    boolean isEmpty;
-
-                    synchronized (post.repliesFrom) {
-                        isEmpty = post.repliesFrom.isEmpty();
-                    }
-
-                    if (isEmpty) {
+                    if (post.repliesFrom.isEmpty()) {
                         // no replies to this post so no point in showing the dialog
                         hideOrRemovePosts(hide, false, post, chanLoader.getThread().getOp().no);
                     } else {
@@ -911,7 +888,6 @@ public class ThreadPresenter
             matching.add(post);
         } else {
             //match all post IDs
-            //noinspection ConstantConditions, isBound check takes care of this
             for (Post p : getChanThread().getPosts()) {
                 if (!TextUtils.isEmpty(p.id) && p.id.equals(post.id)) {
                     matching.add(p);
@@ -971,21 +947,36 @@ public class ThreadPresenter
         } else if (linkable.type == PostLinkable.Type.ARCHIVE) {
             if (linkable.value instanceof ThreadLink) {
                 ThreadLink opPostPair = (ThreadLink) linkable.value;
-                showArchives(opPostPair.board, opPostPair.threadId, opPostPair.postId);
+                Loadable constructed =
+                        Loadable.forThread(Board.fromSiteNameCode(loadable.site, opPostPair.board, opPostPair.board),
+                                opPostPair.threadId,
+                                "",
+                                false
+                        );
+                showArchives(constructed, opPostPair.postId);
             } else if (linkable.value instanceof ResolveLink) {
                 ResolveLink toResolve = (ResolveLink) linkable.value;
                 if (toResolve.board.site instanceof ExternalSiteArchive) {
                     showToast(context, "Calling archive API, just a moment!");
                     toResolve.resolve((threadLink) -> {
                         if (threadLink != null) {
-                            showArchives(threadLink.board, threadLink.threadId, threadLink.postId);
+                            Loadable constructed = Loadable.forThread(Board.fromSiteNameCode(toResolve.board.site,
+                                    threadLink.board,
+                                    threadLink.board
+                                    ),
+                                    threadLink.threadId,
+                                    "",
+                                    false
+                            );
+                            showArchives(constructed, threadLink.postId);
                         } else {
                             showToast(context, "Failed to resolve thread external post link!");
                         }
                     }, new ResolveLink.ResolveParser(toResolve));
                 } else {
                     // for any dead links that aren't in an archive, assume that they're a link to a previous thread OP
-                    showArchives(toResolve.board.code, toResolve.postId, toResolve.postId);
+                    Loadable constructed = Loadable.forThread(toResolve.board, toResolve.postId, "", false);
+                    showArchives(constructed, toResolve.postId);
                 }
             }
         }
@@ -1005,12 +996,10 @@ public class ThreadPresenter
     public void onShowPostReplies(Post post) {
         if (!isBound()) return;
         List<Post> posts = new ArrayList<>();
-        synchronized (post.repliesFrom) {
-            for (int no : post.repliesFrom) {
-                Post replyPost = PostUtils.findPostById(no, chanLoader.getThread());
-                if (replyPost != null) {
-                    posts.add(replyPost);
-                }
+        for (int no : post.repliesFrom) {
+            Post replyPost = PostUtils.findPostById(no, chanLoader.getThread());
+            if (replyPost != null) {
+                posts.add(replyPost);
             }
         }
         if (posts.size() > 0) {
@@ -1049,25 +1038,22 @@ public class ThreadPresenter
     @Override
     public void onListStatusClicked() {
         if (!isBound()) return;
-        //noinspection ConstantConditions
         if (!chanLoader.getThread().isArchived()) {
             chanLoader.requestMoreData();
         } else {
-            showArchives(loadable.board.code, loadable.no, -1);
+            showArchives(loadable, loadable.no);
         }
     }
 
-    public void showArchives(String boardCode, int opNo, int postNo) {
-        @SuppressLint("InflateParams")
+    public void showArchives(Loadable op, int postNo) {
         final ArchivesLayout dialogView = (ArchivesLayout) inflate(context, R.layout.layout_archives, null);
-        boolean hasContents = dialogView.setBoard(loadable.board);
-        dialogView.setOpNo(opNo);
+        boolean hasContents = dialogView.setLoadable(op);
         dialogView.setPostNo(postNo);
         dialogView.setCallback(this);
 
         if (loadable.site instanceof ExternalSiteArchive) {
             // skip the archive picker, re-use the same archive we're already in
-            openArchive((ExternalSiteArchive) loadable.site, boardCode, opNo, postNo);
+            openArchive((ExternalSiteArchive) loadable.site, op, postNo);
         } else if (hasContents) {
             AlertDialog dialog = new AlertDialog.Builder(context).setView(dialogView)
                     .setTitle(R.string.thread_view_external_archive)
@@ -1089,8 +1075,7 @@ public class ThreadPresenter
     public void requestNewPostLoad() {
         if (isBound() && loadable.isThreadMode()) {
             chanLoader.requestMoreData();
-            //put in a "request" for a page update whenever the next set of data comes in
-            forcePageUpdate = true;
+            PageRepository.forceUpdateForBoard(chanLoader.getLoadable().board);
         }
     }
 
@@ -1102,7 +1087,6 @@ public class ThreadPresenter
     private void requestDeletePost(Post post) {
         SavedReply reply = databaseSavedReplyManager.getSavedReply(post.board, post.no);
         if (reply != null) {
-            @SuppressLint("InflateParams")
             final View view = LayoutUtils.inflate(context, R.layout.dialog_post_delete, null);
             CheckBox checkBox = view.findViewById(R.id.image_only);
             new AlertDialog.Builder(context).setTitle(R.string.delete_confirm)
@@ -1234,15 +1218,8 @@ public class ThreadPresenter
     }
 
     private void showPosts() {
-        showPosts(false);
-    }
-
-    private void showPosts(boolean hardRefresh) {
         if (chanLoader != null && chanLoader.getThread() != null) {
-            threadPresenterCallback.showPosts(chanLoader.getThread(),
-                    new PostsFilter(order, searchQuery, databaseHideManager),
-                    hardRefresh
-            );
+            threadPresenterCallback.showPosts(chanLoader.getThread(), new PostsFilter(order, searchQuery));
         }
     }
 
@@ -1278,9 +1255,9 @@ public class ThreadPresenter
     }
 
     @Override
-    public void openArchive(ExternalSiteArchive externalSiteArchive, String boardCode, int opNo, int postNo) {
+    public void openArchive(ExternalSiteArchive externalSiteArchive, Loadable op, int postNo) {
         if (isBound()) {
-            showThread(externalSiteArchive.getArchiveLoadable(boardCode, opNo, postNo));
+            showThread(externalSiteArchive.getArchiveLoadable(op, postNo));
         }
     }
 
@@ -1340,7 +1317,7 @@ public class ThreadPresenter
     }
 
     public interface ThreadPresenterCallback {
-        void showPosts(ChanThread thread, PostsFilter filter, boolean hardRefresh);
+        void showPosts(ChanThread thread, PostsFilter filter);
 
         void postClicked(Post post);
 
@@ -1376,7 +1353,7 @@ public class ThreadPresenter
 
         void smoothScrollNewPosts(int displayPosition);
 
-        void highlightPost(Post post);
+        void highlightPostNo(int postNo);
 
         void highlightPostId(String id);
 
@@ -1398,8 +1375,6 @@ public class ThreadPresenter
 
         void filterPostImageHash(Post post);
 
-        void selectPost(int post);
-
         void showSearch(boolean show);
 
         void setSearchStatus(String query, boolean setEmptyText, boolean hideKeyboard);
@@ -1414,7 +1389,7 @@ public class ThreadPresenter
 
         void hideThread(Post post, int threadNo, boolean hide);
 
-        void showNewPostsNotification(boolean show, int more);
+        void showNewPostsSnackbar(int more);
 
         void showHideOrRemoveWholeChainDialog(boolean hide, Post post, int threadNo);
 

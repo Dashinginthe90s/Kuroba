@@ -52,14 +52,9 @@ public class ChanThread {
         this.posts = Collections.unmodifiableList(new ArrayList<>(posts));
     }
 
-    public synchronized int getPostsCount() {
-        return posts.size();
-    }
-
     public synchronized int getImagesCount() {
         int total = 0;
         for (Post p : posts) {
-            if (p.images == null) continue;
             total += p.images.size();
         }
         return total;
@@ -112,7 +107,7 @@ public class ChanThread {
             return null;
         }
         SpannableStringBuilder builder = new SpannableStringBuilder();
-        boolean hasReplies = op.getReplies() >= 0 || getPostsCount() - 1 > 0;
+        boolean hasReplies = op.getReplies() >= 0 || posts.size() - 1 > 0;
         boolean hasImages = op.getImagesCount() >= 0 || getImagesCount() > 0;
         int style = extraStyling ? Typeface.BOLD_ITALIC : Typeface.ITALIC;
         if (hasReplies && hasImages) {
@@ -120,7 +115,7 @@ public class ChanThread {
             boolean hasImageLimit = loadable.board.imageLimit > 0;
 
             SpannableString replies =
-                    new SpannableString((op.getReplies() >= 0 ? op.getReplies() : getPostsCount() - 1) + "R");
+                    new SpannableString((op.getReplies() >= 0 ? op.getReplies() : posts.size() - 1) + "R");
             if (hasBumpLimit && op.getReplies() >= loadable.board.bumpLimit) {
                 replies.setSpan(new StyleSpan(style), 0, replies.length(), 0);
                 if (extraStyling) {

@@ -129,13 +129,12 @@ public class Kun8
         });
 
         setApi(new VichanApi(this));
-
         setParser(new VichanCommentParser());
     }
 
     @NonNull
     @Override
     public ChunkDownloaderSiteProperties getChunkDownloaderSiteProperties() {
-        return new ChunkDownloaderSiteProperties(true, true);
+        return new ChunkDownloaderSiteProperties(Integer.MAX_VALUE, true, true);
     }
 }

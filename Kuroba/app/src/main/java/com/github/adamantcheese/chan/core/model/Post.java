@@ -18,16 +18,13 @@ package com.github.adamantcheese.chan.core.model;
 
 import android.graphics.Color;
 import android.text.SpannableStringBuilder;
-import android.text.Spanned;
-import android.text.TextUtils;
 
 import androidx.annotation.AnyThread;
 import androidx.annotation.MainThread;
+import androidx.annotation.NonNull;
 
-import com.github.adamantcheese.chan.core.manager.FilterEngine;
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
-import com.github.adamantcheese.chan.ui.text.SearchHighlightSpan;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.vdurmont.emoji.EmojiParser;
 
@@ -38,16 +35,16 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Contains all data needed to represent a single post.<br>
  * All {@code final} fields are thread-safe.
  */
 public class Post
-        implements Comparable<Post> {
+        implements Comparable<Post>, Cloneable {
     public final String boardId;
 
     public final Board board;
@@ -67,7 +64,7 @@ public class Post
      */
     public final long time;
 
-    public final List<PostImage> images;
+    public final List<PostImage> images = new CopyOnWriteArrayList<>();
 
     public final String tripcode;
 
@@ -96,7 +93,7 @@ public class Post
     public final boolean filterSaved;
 
     /**
-     * This post replies to the these ids.
+     * This post replies to the these post numbers.
      */
     public final Set<Integer> repliesTo;
 
@@ -108,16 +105,13 @@ public class Post
 
     /**
      * This post has been deleted (the server isn't sending it anymore).
-     * <p><b>This boolean is modified in worker threads, use {@code .get()} to access it.</b>
      */
     public final AtomicBoolean deleted = new AtomicBoolean(false);
 
     /**
-     * These ids replied to this post.
-     * <p><b>Manual synchronization is needed, since this list can be modified from any thread.
-     * Wrap all accesses in a {@code synchronized} block.</b>
+     * These post numbers replied to this post.
      */
-    public final List<Integer> repliesFrom = new ArrayList<>();
+    public final List<Integer> repliesFrom = new CopyOnWriteArrayList<>();
 
     // These members may only mutate on the main thread.
     private boolean sticky;
@@ -129,7 +123,7 @@ public class Post
     private long lastModified;
     private String title = "";
 
-    public boolean needsEmbedding;
+    public AtomicBoolean embedComplete = new AtomicBoolean(false);
 
     public int compareTo(Post p) {
         return -Long.compare(this.time, p.time);
@@ -138,7 +132,7 @@ public class Post
     private Post(Builder builder) {
         board = builder.board;
         boardId = builder.board.code;
-        no = builder.id;
+        no = builder.no;
 
         isOP = builder.op;
         replies = builder.replies;
@@ -155,10 +149,8 @@ public class Post
         tripcode = builder.tripcode;
 
         time = builder.unixTimestampSeconds;
-        if (builder.images == null) {
-            images = Collections.unmodifiableList(Collections.emptyList());
-        } else {
-            images = Collections.unmodifiableList(builder.images);
+        if (builder.images != null) {
+            images.addAll(builder.images);
         }
 
         if (builder.httpIcons != null) {
@@ -183,10 +175,8 @@ public class Post
         subjectSpan = builder.subjectSpan;
         nameTripcodeIdCapcodeSpan = builder.nameTripcodeIdCapcodeSpan;
 
-        linkables = new HashSet<>(builder.linkables);
-        repliesTo = Collections.unmodifiableSet(builder.repliesToIds);
-
-        needsEmbedding = builder.needsEmbedding;
+        linkables = new CopyOnWriteArraySet<>(builder.linkables);
+        repliesTo = Collections.unmodifiableSet(builder.repliesToNos);
     }
 
     @AnyThread
@@ -283,23 +273,30 @@ public class Post
      * Adds an image to the images set; generally don't do this unless you have some special reason for it!
      * Add images while the post is still a Builder instance if you can instead!
      */
-    public void addImage(PostImage image) {
-        try {
-            Field imageList = Post.class.getDeclaredField("images");
-            imageList.setAccessible(true);
-            List<PostImage> newImages = new ArrayList<>(images);
-            for (PostImage postImage : newImages) {
-                if (image.equals(postImage)) {
-                    // this image was already added before (as though it were a set)
-                    imageList.setAccessible(false);
-                    return;
-                }
+    public void addImages(List<PostImage> images) {
+        for (PostImage i : images) {
+            if (this.images.contains(i)) continue;
+            if (images.size() >= 5) {
+                Logger.d(this, "Image list is capped at 5 images!");
+                return;
             }
-            newImages.add(image);
-            imageList.set(this, Collections.unmodifiableList(newImages));
-            imageList.setAccessible(false);
+            this.images.add(i);
+        }
+    }
+
+    /**
+     * @param replacement The replacement comment to override the existing one in this post. Use wisely!
+     */
+    public synchronized void setComment(SpannableStringBuilder replacement) {
+        try {
+            synchronized (comment) {
+                Field c = Post.class.getField("comment");
+                c.setAccessible(true);
+                c.set(this, replacement);
+                c.setAccessible(false);
+            }
         } catch (Exception e) {
-            Logger.d(this, "Failed to add image with reflection", e);
+            Logger.d(this, "Failed to set new comment!");
         }
     }
 
@@ -309,70 +306,140 @@ public class Post
     }
 
     @Override
-    public int hashCode() {
-        int commentTotal = 0;
-        for (char c : comment.toString().toCharArray()) {
-            commentTotal += c;
-        }
-        return Objects.hash(no, board.code, board.siteId, deleted.get(), commentTotal);
-    }
-
-    @Override
-    public boolean equals(Object other) {
-        if (other == null) {
-            return false;
-        }
-
-        if (other == this) {
-            return true;
-        }
-
-        if (this.getClass() != other.getClass()) {
-            return false;
-        }
-
-        Post otherPost = (Post) other;
-
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Post post = (Post) o;
         //@formatter:off
-        return this.no == otherPost.no
-                && this.board.code.equals(otherPost.board.code)
-                && this.board.siteId == otherPost.board.siteId
-                && this.deleted.get() == otherPost.deleted.get()
-                && this.comment.toString().equals(otherPost.comment.toString());
+        return no == post.no
+                && isOP == post.isOP
+                && time == post.time
+                && opId == post.opId
+                && isSavedReply == post.isSavedReply
+                && filterHighlightedColor == post.filterHighlightedColor
+                && filterStub == post.filterStub
+                && filterRemove == post.filterRemove
+                && filterWatch == post.filterWatch
+                && filterReplies == post.filterReplies
+                && filterOnlyOP == post.filterOnlyOP
+                && filterSaved == post.filterSaved
+                && sticky == post.sticky
+                && closed == post.closed
+                && archived == post.archived
+                && lastModified == post.lastModified
+                && Objects.equals(boardId, post.boardId)
+                && Objects.equals(board, post.board)
+                && Objects.equals(name, post.name)
+                && Objects.equals(comment, post.comment)
+                && Objects.equals(subject, post.subject)
+                && Objects.equals(images, post.images)
+                && Objects.equals(tripcode, post.tripcode)
+                && Objects.equals(id, post.id)
+                && Objects.equals(capcode, post.capcode)
+                && Objects.equals(httpIcons, post.httpIcons)
+                && Objects.equals(repliesTo, post.repliesTo)
+                && Objects.equals(linkables, post.linkables)
+                && Objects.equals(deleted.get(), post.deleted.get())
+                && Objects.equals(repliesFrom, post.repliesFrom)
+                && Objects.equals(title, post.title)
+                && Objects.equals(embedComplete.get(), post.embedComplete.get()
+        );
         //@formatter:on
     }
 
     @Override
+    public int hashCode() {
+        return Objects.hash(
+                boardId,
+                board,
+                no,
+                isOP,
+                name,
+                comment,
+                subject,
+                time,
+                images,
+                tripcode,
+                id,
+                opId,
+                capcode,
+                httpIcons,
+                isSavedReply,
+                filterHighlightedColor,
+                filterStub,
+                filterRemove,
+                filterWatch,
+                filterReplies,
+                filterOnlyOP,
+                filterSaved,
+                repliesTo,
+                linkables,
+                deleted.get(),
+                repliesFrom,
+                sticky,
+                closed,
+                archived,
+                lastModified,
+                title,
+                embedComplete.get()
+        );
+    }
+
+    @Override
+    @NonNull
     public String toString() {
         return "[no = " + no + ", boardCode = " + board.code + ", siteId = " + board.siteId + ", comment = " + comment
                 + "]";
     }
 
-    public void highlightSearch(String query) {
-        synchronized (comment) {
-            // clear out any old spans
-            for (SearchHighlightSpan span : comment.getSpans(0, comment.length(), SearchHighlightSpan.class)) {
-                comment.removeSpan(span);
-            }
-            if (TextUtils.isEmpty(query)) return;
-            Pattern search = Pattern.compile(FilterEngine.escapeRegex(query), Pattern.CASE_INSENSITIVE);
-            Matcher searchMatch = search.matcher(comment);
-            // apply new spans
-            while (searchMatch.find()) {
-                comment.setSpan(
-                        new SearchHighlightSpan(),
-                        searchMatch.toMatchResult().start(),
-                        searchMatch.toMatchResult().end(),
-                        Spanned.SPAN_INCLUSIVE_EXCLUSIVE
-                );
-            }
-        }
+    @NonNull
+    @Override
+    public Post clone() {
+        Post clone = new Builder().board(board)
+                .no(no)
+                .opId(opId)
+                .op(isOP)
+                .replies(replies)
+                .images(imagesCount)
+                .uniqueIps(uniqueIps)
+                .sticky(sticky)
+                .archived(archived)
+                .lastModified(lastModified)
+                .closed(closed)
+                .subject(subject)
+                .name(name)
+                .comment(comment)
+                .tripcode(tripcode)
+                .setUnixTimestampSeconds(time)
+                .images(images)
+                .posterId(id)
+                .moderatorCapcode(capcode)
+                .setHttpIcons(httpIcons)
+                .filter(
+                        filterHighlightedColor,
+                        filterStub,
+                        filterRemove,
+                        filterWatch,
+                        filterReplies,
+                        filterOnlyOP,
+                        filterSaved
+                )
+                .isSavedReply(isSavedReply)
+                .spans(subjectSpan, nameTripcodeIdCapcodeSpan)
+                .linkables(linkables)
+                .repliesTo(repliesTo)
+                .build();
+        clone.repliesFrom.addAll(repliesFrom);
+        clone.setTitle(getTitle());
+        clone.deleted.set(deleted.get());
+        clone.embedComplete.set(embedComplete.get());
+        return clone;
     }
 
     @SuppressWarnings("UnusedReturnValue")
     public static final class Builder {
         public Board board;
-        public int id = -1;
+        public int no = -1;
         public int opId = -1;
 
         public boolean op;
@@ -390,7 +457,7 @@ public class Post
         public String tripcode = "";
 
         public long unixTimestampSeconds = -1L;
-        public List<PostImage> images = new ArrayList<>();
+        public List<PostImage> images = new CopyOnWriteArrayList<>();
 
         public List<PostHttpIcon> httpIcons;
 
@@ -411,10 +478,8 @@ public class Post
         public CharSequence subjectSpan;
         public CharSequence nameTripcodeIdCapcodeSpan;
 
-        private Set<PostLinkable> linkables = new HashSet<>();
-        private Set<Integer> repliesToIds = new HashSet<>();
-
-        public boolean needsEmbedding;
+        private final Set<PostLinkable> linkables = new CopyOnWriteArraySet<>();
+        private final Set<Integer> repliesToNos = new HashSet<>();
 
         public Builder() {
         }
@@ -424,8 +489,8 @@ public class Post
             return this;
         }
 
-        public Builder id(int id) {
-            this.id = id;
+        public Builder no(int no) {
+            this.no = no;
             return this;
         }
 
@@ -514,9 +579,7 @@ public class Post
         }
 
         public Builder images(List<PostImage> images) {
-            synchronized (this) {
-                this.images.addAll(images);
-            }
+            this.images.addAll(images);
 
             return this;
         }
@@ -587,45 +650,29 @@ public class Post
         }
 
         public Builder addLinkable(PostLinkable linkable) {
-            synchronized (this) {
-                linkables.add(linkable);
-                return this;
-            }
-        }
-
-        public Builder linkables(Set<PostLinkable> linkables) {
-            synchronized (this) {
-                this.linkables = new HashSet<>(linkables);
-                return this;
-            }
-        }
-
-        public List<PostLinkable> getLinkables() {
-            synchronized (this) {
-                List<PostLinkable> result = new ArrayList<>();
-                if (linkables != null) {
-                    result.addAll(linkables);
-                }
-                return result;
-            }
-        }
-
-        public Builder addReplyTo(int postId) {
-            repliesToIds.add(postId);
+            linkables.add(linkable);
             return this;
         }
 
-        public Builder repliesTo(Set<Integer> repliesToIds) {
-            this.repliesToIds = repliesToIds;
+        public Builder linkables(Set<PostLinkable> linkables) {
+            this.linkables.addAll(linkables);
+            return this;
+        }
+
+        public Builder addReplyTo(int postNo) {
+            repliesToNos.add(postNo);
+            return this;
+        }
+
+        public Builder repliesTo(Set<Integer> repliesToNos) {
+            this.repliesToNos.addAll(repliesToNos);
             return this;
         }
 
         public Post build() {
-            if (board == null || id < 0 || opId < 0 || unixTimestampSeconds < 0 || comment == null) {
+            if (board == null || no < 0 || opId < 0 || unixTimestampSeconds < 0 || comment == null) {
                 throw new IllegalArgumentException("Post data not complete");
             }
-
-            needsEmbedding = needsEmbedding | board.mathTags;
 
             return new Post(this);
         }

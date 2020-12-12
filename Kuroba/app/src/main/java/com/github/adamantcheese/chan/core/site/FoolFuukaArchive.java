@@ -9,7 +9,6 @@ import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.site.common.DefaultPostParser;
-import com.github.adamantcheese.chan.core.site.parser.ChanReader;
 import com.github.adamantcheese.chan.core.site.parser.ChanReaderProcessingQueue;
 import com.github.adamantcheese.chan.core.site.parser.CommentParser;
 import com.github.adamantcheese.chan.core.site.parser.CommentParser.ResolveLink;
@@ -31,12 +30,14 @@ public class FoolFuukaArchive
 
     private FoolFuukaReader reader;
 
-    public FoolFuukaArchive(String domain, String name, List<String> boardCodes, boolean searchEnabled) {
+    public FoolFuukaArchive(
+            String domain, String name, List<String> boardCodes, boolean searchEnabled
+    ) {
         super(domain, name, boardCodes, searchEnabled);
     }
 
     private class FoolFuukaReader
-            implements ChanReader {
+            extends ExternalArchiveChanReader {
 
         private PostParser parser;
 
@@ -71,11 +72,6 @@ public class FoolFuukaArchive
         }
 
         @Override
-        public void loadCatalog(
-                JsonReader reader, ChanReaderProcessingQueue queue
-        ) {} // archives don't support catalogs
-
-        @Override
         public void readPostObject(
                 JsonReader reader, ChanReaderProcessingQueue queue
         )
@@ -88,7 +84,7 @@ public class FoolFuukaArchive
                 String key = reader.nextName();
                 switch (key) {
                     case "num":
-                        builder.id(reader.nextInt());
+                        builder.no(reader.nextInt());
                         break;
                     case "thread_num":
                         builder.opId(reader.nextInt());
@@ -218,6 +214,7 @@ public class FoolFuukaArchive
     private static class FoolFuukaCommentParser
             extends CommentParser {
         public FoolFuukaCommentParser(String domain) {
+            super();
             addDefaultRules();
             // matches https://domain.tld/boardcode/blah/opNo(/#p)postNo/
             // blah can be "thread" or "post"; "thread" is just a normal thread link, but "post" is a crossthread link that needs to be resolved
@@ -300,7 +297,7 @@ public class FoolFuukaArchive
     }
 
     @Override
-    public ChanReader chanReader() {
+    public ExternalArchiveChanReader chanReader() {
         if (reader == null) {
             reader = new FoolFuukaReader();
         }

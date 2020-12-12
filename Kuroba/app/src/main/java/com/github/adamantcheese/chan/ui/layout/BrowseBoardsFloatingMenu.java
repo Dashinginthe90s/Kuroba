@@ -51,6 +51,7 @@ import com.github.adamantcheese.chan.core.site.common.CommonSite;
 import com.github.adamantcheese.chan.ui.helper.BoardHelper;
 import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 import com.github.adamantcheese.chan.utils.LayoutUtils;
+import com.github.adamantcheese.chan.utils.RecyclerUtils;
 
 import java.util.Observable;
 import java.util.Observer;
@@ -82,7 +83,7 @@ public class BrowseBoardsFloatingMenu
     private View anchor;
     private RecyclerView recyclerView;
 
-    private Point position = new Point(0, 0);
+    private final Point position = new Point(0, 0);
     private boolean dismissed = false;
 
     @Inject
@@ -92,7 +93,7 @@ public class BrowseBoardsFloatingMenu
     private BrowseBoardsAdapter adapter;
 
     private ClickCallback clickCallback;
-    private ViewTreeObserver.OnGlobalLayoutListener layoutListener = this::repositionToAnchor;
+    private final ViewTreeObserver.OnGlobalLayoutListener layoutListener = this::repositionToAnchor;
 
     public BrowseBoardsFloatingMenu(Context context) {
         this(context, null);
@@ -142,18 +143,35 @@ public class BrowseBoardsFloatingMenu
                 @Override
                 public void setup() {
                     setName("App Setup");
-                    setIcon(SiteIcon.fromDrawable(getContext().getDrawable(R.drawable.ic_settings_themed_24dp)));
+                    setIcon(SiteIcon.fromDrawable(getContext().getDrawable(R.drawable.ic_fluent_settings_24_filled)));
                 }
             };
             setupSite.setup();
             items.items.add(new Item(1, setupSite));
         }
+
+        // items should exist before this is added
+        recyclerView.addItemDecoration(RecyclerUtils.getDividerDecoration(getContext(),
+                new RecyclerUtils.ShowDividerFunction() {
+                    @Override
+                    public boolean shouldShowDivider(int adapterSize, int adapterPosition) {
+                        // ignore first site, search bar acts as a divider
+                        return items.getAtPosition(adapterPosition).type == SITE;
+                    }
+
+                    @Override
+                    public boolean showDividerTop() {
+                        return true;
+                    }
+                }
+        ));
     }
 
     @Override
     public void update(Observable o, Object arg) {
         if (o == presenter.items()) {
             adapter.notifyDataSetChanged();
+            recyclerView.invalidateItemDecorations();
         }
     }
 
@@ -307,28 +325,26 @@ public class BrowseBoardsFloatingMenu
 
         @Override
         public long getItemId(int position) {
-            Item item = items.getAtPosition(position);
-            return item.id;
+            return items.getAtPosition(position).id;
         }
 
         @Override
         public int getItemViewType(int position) {
-            Item item = items.getAtPosition(position);
-            return item.type.typeId;
+            return items.getAtPosition(position).type.ordinal();
         }
 
         @NonNull
         @Override
         public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            if (viewType == SEARCH.typeId) {
+            if (viewType == SEARCH.ordinal()) {
                 return new InputViewHolder(LayoutUtils.inflate(getContext(),
                         R.layout.cell_browse_input,
                         parent,
                         false
                 ));
-            } else if (viewType == SITE.typeId) {
+            } else if (viewType == SITE.ordinal()) {
                 return new SiteViewHolder(LayoutUtils.inflate(getContext(), R.layout.cell_browse_site, parent, false));
-            } else if (viewType == BOARD.typeId) {
+            } else if (viewType == BOARD.ordinal()) {
                 return new BoardViewHolder(LayoutUtils.inflate(getContext(),
                         R.layout.cell_browse_board,
                         parent,
@@ -371,7 +387,7 @@ public class BrowseBoardsFloatingMenu
     private class InputViewHolder
             extends ViewHolder
             implements TextWatcher, OnFocusChangeListener, OnClickListener, OnKeyListener {
-        private EditText input;
+        private final EditText input;
 
         public InputViewHolder(View itemView) {
             super(itemView);
@@ -419,7 +435,6 @@ public class BrowseBoardsFloatingMenu
 
     private class SiteViewHolder
             extends ViewHolder {
-        View divider;
         ImageView image;
         TextView text;
 
@@ -427,7 +442,6 @@ public class BrowseBoardsFloatingMenu
 
         public SiteViewHolder(View itemView) {
             super(itemView);
-            divider = itemView.findViewById(R.id.divider);
             image = itemView.findViewById(R.id.image);
             text = itemView.findViewById(R.id.text);
             text.setTypeface(ThemeHelper.getTheme().mainFont);
@@ -436,7 +450,6 @@ public class BrowseBoardsFloatingMenu
         public void bind(Site site) {
             this.site = site;
             itemView.setOnClickListener(v -> itemClicked(site, null));
-            divider.setVisibility(getAdapterPosition() == 0 ? GONE : VISIBLE);
             site.icon().get(image::setImageDrawable);
             text.setText(site.name());
         }

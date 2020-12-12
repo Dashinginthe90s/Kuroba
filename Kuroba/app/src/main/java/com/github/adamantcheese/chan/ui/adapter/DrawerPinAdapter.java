@@ -16,6 +16,7 @@
  */
 package com.github.adamantcheese.chan.ui.adapter;
 
+import android.content.Context;
 import android.graphics.Paint;
 import android.graphics.drawable.ColorDrawable;
 import android.text.SpannableStringBuilder;
@@ -35,6 +36,7 @@ import com.github.adamantcheese.chan.core.repository.BitmapRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.helper.BoardHelper;
 import com.github.adamantcheese.chan.ui.helper.PostHelper;
+import com.github.adamantcheese.chan.ui.layout.SearchLayout;
 import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 import com.github.adamantcheese.chan.ui.view.ThumbnailView;
 
@@ -42,6 +44,8 @@ import javax.inject.Inject;
 
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
+import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
+import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 import static com.github.adamantcheese.chan.Chan.inject;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
@@ -49,14 +53,17 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrDrawable;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.sp;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
+import static com.github.adamantcheese.chan.utils.StringUtils.applySearchSpans;
 import static com.github.adamantcheese.chan.utils.StringUtils.getShortString;
 
 public class DrawerPinAdapter
-        extends RecyclerView.Adapter<DrawerPinAdapter.PinViewHolder> {
+        extends RecyclerView.Adapter<DrawerPinAdapter.PinViewHolder>
+        implements SearchLayout.SearchLayoutCallback {
 
     @Inject
     WatchManager watchManager;
 
+    private String searchQuery = "";
     private final Callback callback;
     private Pin highlighted;
 
@@ -74,18 +81,26 @@ public class DrawerPinAdapter
 
     @Override
     public void onBindViewHolder(@NonNull PinViewHolder holder, int position) {
+        Context context = holder.itemView.getContext();
         final Pin pin;
         synchronized (watchManager.getAllPins()) {
             pin = watchManager.getAllPins().get(position);
         }
-        CharSequence title = pin.loadable.title;
-        if (pin.archived) {
-            title = PostHelper.prependIcon(holder.itemView.getContext(), title, BitmapRepository.archivedIcon, sp(16));
+
+        if (!pin.loadable.title.toLowerCase().contains(searchQuery.toLowerCase())) {
+            holder.itemView.setVisibility(View.GONE);
+            ViewGroup.LayoutParams oldParams = holder.itemView.getLayoutParams();
+            oldParams.height = 0;
+            oldParams.width = 0;
+            holder.itemView.setLayoutParams(oldParams);
+            return;
+        } else {
+            holder.itemView.setVisibility(View.VISIBLE);
+            holder.itemView.getLayoutParams().width = MATCH_PARENT;
+            holder.itemView.getLayoutParams().height = WRAP_CONTENT;
         }
-        if (pin.isSticky) {
-            title = PostHelper.prependIcon(holder.itemView.getContext(), title, BitmapRepository.stickyIcon, sp(16));
-        }
-        holder.title.setText(title);
+
+        holder.title.setText(applySearchSpans(pin.loadable.title, searchQuery));
 
         if (holder.image.getSource() != pin.loadable.thumbnailUrl) {
             holder.image.setUrl(pin.loadable.thumbnailUrl, dp(48), dp(48));
@@ -94,15 +109,22 @@ public class DrawerPinAdapter
 
         WatchManager.PinWatcher pinWatcher = watchManager.getPinWatcher(pin);
         if (pinWatcher != null) {
-            SpannableStringBuilder summary = pinWatcher.getSummary();
-            if (summary != null) {
-                SpannableStringBuilder info = new SpannableStringBuilder("/" + pin.loadable.boardCode + "/ - ");
-                info.append(summary);
-                holder.threadInfo.setVisibility(VISIBLE);
-                holder.threadInfo.setText(info);
+            CharSequence summary = pinWatcher.getSummary();
+            if (summary == null) {
+                summary = new SpannableStringBuilder(BoardHelper.getName(pin.loadable.board));
             } else {
-                holder.threadInfo.setText(BoardHelper.getName(pin.loadable.board));
+                summary = new SpannableStringBuilder("/" + pin.loadable.boardCode + "/ - " + summary);
             }
+
+            if (pin.archived) {
+                summary = PostHelper.prependIcon(context, summary, BitmapRepository.archivedIcon, sp(16));
+            }
+            if (pin.isSticky) {
+                summary = PostHelper.prependIcon(context, summary, BitmapRepository.stickyIcon, sp(16));
+            }
+
+            holder.threadInfo.setVisibility(VISIBLE);
+            holder.threadInfo.setText(summary);
         } else {
             holder.threadInfo.setVisibility(GONE);
             holder.title.setText(String.format("/%s/ - %s", pin.loadable.boardCode, holder.title.getText()));
@@ -127,20 +149,16 @@ public class DrawerPinAdapter
         }
 
         if (pin.drawerHighlight) {
-            holder.itemView.setBackground(new ColorDrawable(getAttrColor(holder.itemView.getContext(),
-                    R.attr.highlight_color
-            )));
+            holder.itemView.setBackground(new ColorDrawable(getAttrColor(context, R.attr.highlight_color)));
         } else {
-            holder.itemView.setBackground(getAttrDrawable(holder.itemView.getContext(),
-                    R.drawable.ripple_item_background
-            ));
+            holder.itemView.setBackground(getAttrDrawable(context, R.drawable.ripple_item_background));
         }
     }
 
     @Override
     public void onViewRecycled(@NonNull PinViewHolder holder) {
         holder.image.setGreyscale(false);
-        holder.image.setUrl(null);
+        holder.image.setUrl(null, 0, 0);
         holder.watchCountText.setText("");
         holder.title.setText("");
         holder.threadInfo.setText("");
@@ -171,12 +189,24 @@ public class DrawerPinAdapter
         this.highlighted = highlighted;
     }
 
+    @Override
+    public void onSearchEntered(String entered) {
+        searchQuery = entered;
+        notifyDataSetChanged();
+    }
+
+    @Override
+    public void onClearPressedWhenEmpty() {
+        searchQuery = "";
+        notifyDataSetChanged();
+    }
+
     public class PinViewHolder
             extends ViewHolder {
-        private ThumbnailView image;
-        private TextView title;
-        private TextView threadInfo;
-        private TextView watchCountText;
+        private final ThumbnailView image;
+        private final TextView title;
+        private final TextView threadInfo;
+        private final TextView watchCountText;
 
         private PinViewHolder(View itemView) {
             super(itemView);

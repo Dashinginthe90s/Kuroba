@@ -34,7 +34,6 @@ import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.helper.RuntimePermissionsHelper;
 import com.github.adamantcheese.chan.ui.service.SavingNotification;
 import com.github.adamantcheese.chan.ui.settings.SavedFilesBaseDirectory;
-import com.github.adamantcheese.chan.ui.widget.CancellableToast;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.adamantcheese.chan.utils.StringUtils;
@@ -70,6 +69,7 @@ import static com.github.adamantcheese.chan.core.saver.ImageSaver.BundledImageSa
 import static com.github.adamantcheese.chan.core.saver.ImageSaver.BundledImageSaveResult.NoWriteExternalStoragePermission;
 import static com.github.adamantcheese.chan.core.saver.ImageSaver.BundledImageSaveResult.Ok;
 import static com.github.adamantcheese.chan.core.saver.ImageSaver.BundledImageSaveResult.UnknownError;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.StringUtils.maskImageUrl;
@@ -89,26 +89,22 @@ public class ImageSaver {
     /**
      * Amount of successfully downloaded images
      */
-    private AtomicInteger doneTasks = new AtomicInteger(0);
+    private final AtomicInteger doneTasks = new AtomicInteger(0);
     /**
      * Total amount of images in a batch to download
      */
-    private AtomicInteger totalTasks = new AtomicInteger(0);
+    private final AtomicInteger totalTasks = new AtomicInteger(0);
     /**
      * Amount of images we couldn't download
      */
-    private AtomicInteger failedTasks = new AtomicInteger(0);
+    private final AtomicInteger failedTasks = new AtomicInteger(0);
 
-    private FileManager fileManager;
-    /**
-     * Like a normal toast but automatically cancels previous toast when showing a new one to avoid
-     * toast spam.
-     */
-    private CancellableToast cancellableToast = new CancellableToast();
+    private final FileManager fileManager;
+
     /**
      * Reactive queue used for batch image downloads.
      */
-    private FlowableProcessor<ImageSaveTask> imageSaverQueue = PublishProcessor.create();
+    private final FlowableProcessor<ImageSaveTask> imageSaverQueue = PublishProcessor.create();
 
     /**
      * Only for batch downloads. Holds the urls of all images in a batch. Use for batch canceling.
@@ -117,7 +113,7 @@ public class ImageSaver {
     @GuardedBy("itself")
     private final Set<HttpUrl> activeDownloads = new HashSet<>(64);
 
-    private Scheduler workerScheduler = Schedulers.from(new ForkJoinPool(1));
+    private final Scheduler workerScheduler = Schedulers.from(new ForkJoinPool(1));
 
     /**
      * This is a singleton class so we don't care about the disposable since we will never should
@@ -305,7 +301,7 @@ public class ImageSaver {
         Logger.e(this, "imageSaveTaskFailed imageUrl = " + maskImageUrl(task.getPostImage().imageUrl));
 
         String errorMessage = getString(R.string.image_saver_failed_to_save_image, error.getMessage());
-        cancellableToast.showToast(getAppContext(), errorMessage, Toast.LENGTH_LONG);
+        showToast(getAppContext(), errorMessage, Toast.LENGTH_LONG);
     }
 
     private void imageSaveTaskFinished(ImageSaveTask task, BundledDownloadResult result) {
@@ -329,10 +325,10 @@ public class ImageSaver {
         // Also don't show the toast if the task was a share, or if this is an album save task
         if (result == Success && !task.isShareTask()) {
             if (totalTasks.get() == 0) {
-                cancellableToast.showToast(getAppContext(), getText(task, wasAlbumSave), Toast.LENGTH_LONG);
+                showToast(getAppContext(), getText(task, wasAlbumSave), Toast.LENGTH_LONG);
             }
         } else if (result == Canceled && totalTasks.get() == 0) {
-            cancellableToast.showToast(getAppContext(), R.string.image_saver_canceled_by_user, Toast.LENGTH_LONG);
+            showToast(getAppContext(), R.string.image_saver_canceled_by_user, Toast.LENGTH_LONG);
         }
     }
 
@@ -397,7 +393,7 @@ public class ImageSaver {
             activeDownloads.clear();
         }
 
-        cancellableToast.showToast(getAppContext(), R.string.image_saver_canceled_by_user, Toast.LENGTH_LONG);
+        showToast(getAppContext(), R.string.image_saver_canceled_by_user, Toast.LENGTH_LONG);
         onBatchCompleted();
     }
 
@@ -454,7 +450,7 @@ public class ImageSaver {
 
         // filteredName.length() == 0 will only be true when "name" parameter does not have an
         // extension
-        if (filteredName.length() == 0 || isOnlyExtensionLeft) {
+        if (filteredName.isEmpty() || isOnlyExtensionLeft) {
             String appendExtension = extension != null ? "." + extension : "";
             filteredName = System.currentTimeMillis() + appendExtension;
         }

@@ -16,14 +16,17 @@
  */
 package com.github.adamantcheese.chan.core.site.parser;
 
+import android.app.AlertDialog;
 import android.graphics.Typeface;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ClickableSpan;
 import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
 import android.util.JsonReader;
+import android.view.View;
 
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
@@ -42,6 +45,7 @@ import com.github.adamantcheese.chan.core.site.sites.chan4.Chan4;
 import com.github.adamantcheese.chan.ui.text.AbsoluteSizeSpanHashed;
 import com.github.adamantcheese.chan.ui.text.ForegroundColorSpanHashed;
 import com.github.adamantcheese.chan.ui.theme.Theme;
+import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.NetUtils;
 import com.github.adamantcheese.chan.utils.NetUtilsClasses.JSONProcessor;
 import com.github.adamantcheese.chan.utils.NetUtilsClasses.ResponseResult;
@@ -58,8 +62,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static com.github.adamantcheese.chan.Chan.instance;
 import static com.github.adamantcheese.chan.core.site.parser.StyleRule.tagRule;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.getActivityContext;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.sp;
@@ -70,21 +74,22 @@ public class CommentParser {
     private static final String SAVED_REPLY_OTHER_SUFFIX = " (You)";
     private static final String OP_REPLY_SUFFIX = " (OP)";
     private static final String EXTERN_THREAD_LINK_SUFFIX = " \u2192"; // arrow to the right
+    public static final String EXIF_INFO_STRING = "[EXIF data available. Click here to view.]";
 
     private Pattern fullQuotePattern = Pattern.compile("/(\\w+)/\\w+/(\\d+)#p(\\d+)");
     private Pattern quotePattern = Pattern.compile(".*#p(\\d+)");
 
     // A pattern matching any board links
-    private Pattern boardLinkPattern = Pattern.compile("//boards\\.4chan.*?\\.org/(.*?)/");
+    private final Pattern boardLinkPattern = Pattern.compile("//boards\\.4chan.*?\\.org/(.*?)/");
     //alternate for some sites (formerly 8chan)
-    private Pattern boardLinkPattern8Chan = Pattern.compile("/(.*?)/index.html");
+    private final Pattern boardLinkPattern8Chan = Pattern.compile("/(.*?)/index.html");
     // A pattern matching any board search links
-    private Pattern boardSearchPattern = Pattern.compile("//boards\\.4chan.*?\\.org/(.*?)/catalog#s=(.*)");
+    private final Pattern boardSearchPattern = Pattern.compile("//boards\\.4chan.*?\\.org/(.*?)/catalog#s=(.*)");
     // A pattern matching colors for r9k
-    private Pattern colorPattern = Pattern.compile("color:#([0-9a-fA-F]+)");
+    private final Pattern colorPattern = Pattern.compile("color:#([0-9a-fA-F]+)");
 
     // The list of rules for this parser, mapping an HTML tag to a list of StyleRules that need to be applied for that tag
-    private Map<String, List<StyleRule>> rules = new HashMap<>();
+    private final Map<String, List<StyleRule>> rules = new HashMap<>();
 
     private static final Typeface mona = Typeface.createFromAsset(getAppContext().getAssets(), "font/mona.ttf");
 
@@ -105,7 +110,7 @@ public class CommentParser {
         rule(tagRule("span").cssClass("spoiler").link(Type.SPOILER));
         rule(tagRule("span").cssClass("fortune").action(this::handleFortune));
         rule(tagRule("span").cssClass("abbr").nullify());
-        rule(tagRule("span").foregroundColor(StyleRule.ForegroundColor.INLINE_QUOTE).linkify());
+        rule(tagRule("span").foregroundColor(StyleRule.ForegroundColor.INLINE_QUOTE));
         rule(tagRule("span").cssClass("sjis").typeface(mona));
 
         rule(tagRule("table").action(this::handleTable));
@@ -122,10 +127,7 @@ public class CommentParser {
         rule(tagRule("i").italic());
         rule(tagRule("em").italic());
 
-        rule(tagRule("pre").cssClass("prettyprint")
-                .monospace()
-                .size(sp(12f))
-                .backgroundColor(StyleRule.BackgroundColor.CODE));
+        rule(tagRule("pre").cssClass("prettyprint").monospace().code().trimEndWhitespace().size(sp(12f)));
         return this;
     }
 
@@ -265,10 +267,11 @@ public class CommentParser {
         return text;
     }
 
+    // This is used on /p/ for exif data.
     public CharSequence handleTable(
             Theme theme, PostParser.Callback callback, Post.Builder builder, CharSequence text, Element table
     ) {
-        List<CharSequence> parts = new ArrayList<>();
+        SpannableStringBuilder parts = new SpannableStringBuilder();
         Elements tableRows = table.getElementsByTag("tr");
         for (int i = 0; i < tableRows.size(); i++) {
             Element tableRow = tableRows.get(i);
@@ -279,21 +282,30 @@ public class CommentParser {
 
                     SpannableString tableDataPart = new SpannableString(tableData.text());
                     if (tableData.getElementsByTag("b").size() > 0) {
-                        tableDataPart.setSpan(new StyleSpan(Typeface.BOLD), 0, tableDataPart.length(), 0);
-                        tableDataPart.setSpan(new UnderlineSpan(), 0, tableDataPart.length(), 0);
+                        tableDataPart = span(tableDataPart, new StyleSpan(Typeface.BOLD), new UnderlineSpan());
                     }
 
-                    parts.add(tableDataPart);
+                    parts.append(tableDataPart);
 
-                    if (j < tableDatas.size() - 1) parts.add(": ");
+                    if (j < tableDatas.size() - 1) parts.append(": ");
                 }
 
-                if (i < tableRows.size() - 1) parts.add("\n");
+                if (i < tableRows.size() - 1) parts.append("\n");
             }
         }
 
         // Overrides the text (possibly) parsed by child nodes.
-        return span(TextUtils.concat(parts.toArray(new CharSequence[0])),
+        return span(EXIF_INFO_STRING,
+                new ClickableSpan() {
+                    @Override
+                    public void onClick(@NonNull View widget) {
+                        AlertDialog dialog = new AlertDialog.Builder(getActivityContext()).setMessage(parts)
+                                .setPositiveButton(R.string.ok, null)
+                                .create();
+                        dialog.setCanceledOnTouchOutside(true);
+                        dialog.show();
+                    }
+                },
                 new ForegroundColorSpanHashed(getAttrColor(theme.resValue, R.attr.post_inline_quote_color)),
                 new AbsoluteSizeSpanHashed(sp(12f))
         );
@@ -306,7 +318,7 @@ public class CommentParser {
         try {
             if (!(builder.board.site instanceof Chan4)) return text; //4chan only
             int postNo = Integer.parseInt(deadlink.text().substring(2));
-            List<ExternalSiteArchive> boards = instance(ArchivesManager.class).archivesForBoard(builder.board);
+            List<ExternalSiteArchive> boards = ArchivesManager.getInstance().archivesForBoard(builder.board);
             if (!boards.isEmpty()) {
                 PostLinkable newLinkable = new PostLinkable(theme,
                         text,
@@ -379,7 +391,7 @@ public class CommentParser {
                 if (boardLinkMatcher.matches() || boardLinkMatcher8Chan.matches()) {
                     //board link
                     t = Type.BOARD;
-                    value = boardLinkMatcher.matches() ? boardLinkMatcher.group(1) : boardLinkMatcher8Chan.group(1);
+                    value = (boardLinkMatcher.matches() ? boardLinkMatcher : boardLinkMatcher8Chan).group(1);
                 } else if (boardSearchMatcher.matches()) {
                     //search link
                     String board = boardSearchMatcher.group(1);
@@ -455,12 +467,12 @@ public class CommentParser {
             ), new ResponseResult<ThreadLink>() {
                 @Override
                 public void onFailure(Exception e) {
-                    callback.onProcessed(null);
+                    BackgroundUtils.runOnMainThread(() -> callback.onProcessed(null));
                 }
 
                 @Override
                 public void onSuccess(ThreadLink result) {
-                    callback.onProcessed(result);
+                    BackgroundUtils.runOnMainThread(() -> callback.onProcessed(result));
                 }
             }, parser, 5000);
         }
@@ -471,7 +483,7 @@ public class CommentParser {
 
         public static class ResolveParser
                 extends JSONProcessor<ThreadLink> {
-            private ResolveLink sourceLink;
+            private final ResolveLink sourceLink;
 
             public ResolveParser(ResolveLink source) {
                 sourceLink = source;

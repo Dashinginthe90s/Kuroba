@@ -16,47 +16,50 @@
  */
 package com.github.adamantcheese.chan.core.database;
 
+import android.annotation.SuppressLint;
+
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.repository.SiteRepository;
 import com.github.adamantcheese.chan.core.site.Site;
 import com.j256.ormlite.stmt.DeleteBuilder;
 import com.j256.ormlite.stmt.QueryBuilder;
+import com.j256.ormlite.stmt.UpdateBuilder;
 import com.j256.ormlite.support.DatabaseConnection;
 
 import java.sql.SQLException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.Callable;
 
 public class DatabaseLoadableManager {
-    private DatabaseHelper helper;
-    private SiteRepository siteRepository;
+    private final DatabaseHelper helper;
+    private final SiteRepository siteRepository;
 
-    private static long HISTORY_LIMIT = 250L;
+    private static final long HISTORY_LIMIT = 250L;
+    @SuppressLint("ConstantLocale")
+    public static final SimpleDateFormat EPOCH_DATE_FORMAT =
+            new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+    public static final Date EPOCH_DATE;
+
+    static {
+        Date temp;
+        try {
+            temp = EPOCH_DATE_FORMAT.parse("1970-01-01 00:00:01");
+        } catch (ParseException e) {
+            temp = new Date(1000);
+        }
+        EPOCH_DATE = temp;
+    }
 
     public DatabaseLoadableManager(DatabaseHelper helper, SiteRepository siteRepository) {
         this.helper = helper;
         this.siteRepository = siteRepository;
-    }
-
-    /**
-     * Called when the application goes into the background, to purge any old loadables that won't be used anymore; keeps
-     * the database clean and small.
-     */
-    public Callable<Void> purgeOld() {
-        return () -> {
-            DatabaseConnection connection = helper.getLoadableDao().startThreadConnection();
-            Calendar oneMonthAgo = GregorianCalendar.getInstance();
-            oneMonthAgo.add(Calendar.MONTH, -1);
-            DeleteBuilder<Loadable, Integer> delete = helper.getLoadableDao().deleteBuilder();
-            delete.where().lt("lastLoadDate", oneMonthAgo.getTime()).prepare();
-            delete.delete();
-            connection.commit(null);
-            helper.getLoadableDao().endThreadConnection(connection);
-            return null;
-        };
     }
 
     /**
@@ -141,21 +144,73 @@ public class DatabaseLoadableManager {
         };
     }
 
-    public Callable<Void> updateLoadable(Loadable updatedLoadable) {
+    public Callable<Void> updateLoadable(Loadable updatedLoadable, boolean commit) {
         return () -> {
             if (updatedLoadable.isThreadMode()) {
-                helper.getLoadableDao().update(updatedLoadable);
+                if (commit) {
+                    DatabaseConnection connection = helper.getLoadableDao().startThreadConnection();
+                    helper.getLoadableDao().update(updatedLoadable);
+                    connection.commit(null);
+                    helper.getLoadableDao().endThreadConnection(connection);
+                } else {
+                    helper.getLoadableDao().update(updatedLoadable);
+                }
             }
             return null;
         };
     }
 
+    /**
+     * Called when the application goes into the background, to purge any old loadables that won't be used anymore; keeps
+     * the database clean and small. Avoids purging pin loadables.
+     */
+    public Callable<Void> purgeOld() {
+        return () -> {
+            DatabaseConnection connection = helper.getLoadableDao().startThreadConnection();
+            Calendar oneMonthAgo = GregorianCalendar.getInstance();
+            oneMonthAgo.add(Calendar.MONTH, -1);
+
+            DeleteBuilder<Loadable, Integer> builder = helper.getLoadableDao().deleteBuilder();
+            builder.where()
+                    .lt("lastLoadDate", oneMonthAgo.getTime())
+                    .and()
+                    .notIn("id", helper.getPinDao().queryBuilder().selectColumns("loadable_id"));
+            builder.delete();
+
+            connection.commit(null);
+            helper.getLoadableDao().endThreadConnection(connection);
+            return null;
+        };
+    }
+
+    /**
+     * @return A callable that "clears" history by setting the last load date to far in the past for all non-pin associated loadables.
+     */
+    public Callable<Void> clearHistory() {
+        return () -> {
+            UpdateBuilder<Loadable, Integer> builder =
+                    helper.getLoadableDao().updateBuilder().updateColumnValue("lastLoadDate", EPOCH_DATE);
+            builder.where().notIn("id", helper.getPinDao().queryBuilder().selectColumns("loadable_id"));
+            builder.update();
+            return null;
+        };
+    }
+
+    /**
+     * @return A callable that returns a list of history, ignoring pins.
+     */
     public Callable<List<History>> getHistory() {
         return () -> {
-            List<Loadable> historyLoadables =
-                    helper.getLoadableDao().queryBuilder().orderBy("lastLoadDate", false).limit(HISTORY_LIMIT).query();
             List<History> history = new ArrayList<>();
-            for (Loadable l : historyLoadables) {
+            for (Loadable l : helper.getLoadableDao()
+                    .queryBuilder()
+                    .orderBy("lastLoadDate", false)
+                    .limit(HISTORY_LIMIT)
+                    .where()
+                    .notIn("id", helper.getPinDao().queryBuilder().selectColumns("loadable_id"))
+                    .and()
+                    .ne("lastLoadDate", EPOCH_DATE)
+                    .query()) {
                 l.site = siteRepository.forId(l.siteId);
                 l.board = l.site.board(l.boardCode);
                 history.add(new History(l));
@@ -164,7 +219,7 @@ public class DatabaseLoadableManager {
         };
     }
 
-    public class History {
+    public static class History {
         public Loadable loadable;
         public boolean highlighted;
 

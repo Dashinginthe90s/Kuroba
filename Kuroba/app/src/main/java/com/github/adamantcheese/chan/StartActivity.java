@@ -62,7 +62,7 @@ import com.github.adamantcheese.chan.ui.controller.ViewThreadController;
 import com.github.adamantcheese.chan.ui.helper.ImagePickDelegate;
 import com.github.adamantcheese.chan.ui.helper.RuntimePermissionsHelper;
 import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
-import com.github.adamantcheese.chan.utils.BackgroundUtils;
+import com.github.adamantcheese.chan.utils.AndroidUtils;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.k1rakishou.fsaf.FileChooser;
 import com.github.k1rakishou.fsaf.callback.FSAFActivityCallbacks;
@@ -93,7 +93,6 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getApplicationLab
 import static com.github.adamantcheese.chan.utils.AndroidUtils.isAndroid10;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.isTablet;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLink;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class StartActivity
@@ -101,7 +100,7 @@ public class StartActivity
         implements NfcAdapter.CreateNdefMessageCallback, FSAFActivityCallbacks {
     private static final String STATE_KEY = "chan_state";
 
-    private Stack<Controller> stack = new Stack<>();
+    private final Stack<Controller> stack = new Stack<>();
 
     private DrawerController drawerController;
     private NavigationController mainNavigationController;
@@ -112,7 +111,6 @@ public class StartActivity
     private UpdateManager updateManager;
 
     private boolean intentMismatchWorkaroundActive = false;
-    private boolean exitFlag = false;
 
     public static boolean loadedFromURL = false;
     private int currentNightModeBits;
@@ -134,6 +132,9 @@ public class StartActivity
     protected void onCreate(Bundle savedInstanceState) {
         currentNightModeBits = this.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
         super.onCreate(savedInstanceState);
+
+        AndroidUtils.init(null, this);
+
         inject(this);
 
         if (intentMismatchWorkaround()) {
@@ -502,14 +503,7 @@ public class StartActivity
     @Override
     public void onBackPressed() {
         if (!stack.peek().onBack()) {
-            if (!exitFlag) {
-                showToast(this, R.string.action_confirm_exit);
-                exitFlag = true;
-                BackgroundUtils.runOnMainThread(() -> exitFlag = false, 750);
-            } else {
-                exitFlag = false;
-                StartActivity.super.onBackPressed();
-            }
+            StartActivity.super.onBackPressed();
         }
     }
 
@@ -605,8 +599,8 @@ public class StartActivity
         Map<String, EmbedResult> titles = gson.fromJson(PersistableChanState.videoTitleDurCache.get(), lruType);
         //reconstruct
         EmbeddingEngine.videoTitleDurCache = new LruCache<>(500);
-        for (String s : titles.keySet()) {
-            EmbeddingEngine.videoTitleDurCache.put(s, titles.get(s));
+        for (Map.Entry<String, EmbedResult> entry : titles.entrySet()) {
+            EmbeddingEngine.videoTitleDurCache.put(entry.getKey(), entry.getValue());
         }
     }
 

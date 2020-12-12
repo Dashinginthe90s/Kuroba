@@ -73,6 +73,8 @@ import java.util.Locale;
 
 import javax.inject.Inject;
 
+import okhttp3.HttpUrl;
+
 import static android.view.View.GONE;
 import static android.view.View.INVISIBLE;
 import static android.view.View.VISIBLE;
@@ -84,13 +86,14 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getWindow;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLink;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.shareLink;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.waitForLayout;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class ImageViewerController
         extends Controller
-        implements ImageViewerPresenter.Callback, ToolbarMenuItem.OverflowMenuCallback {
+        implements ImageViewerPresenter.Callback, ToolbarMenuItem.OverflowMenuCallback,
+                   ToolbarNavigationController.ToolbarSearchCallback {
     private static final int TRANSITION_DURATION = 300;
     private static final float TRANSITION_FINAL_ALPHA = 0.85f;
 
@@ -106,7 +109,7 @@ public class ImageViewerController
 
     private ImageViewerCallback imageViewerCallback;
     private GoPostCallback goPostCallback;
-    private ImageViewerPresenter presenter;
+    private final ImageViewerPresenter presenter;
 
     private final Toolbar toolbar;
     private TransitionImageView previewImage;
@@ -114,8 +117,7 @@ public class ImageViewerController
     private LoadingBar loadingBar;
 
     private boolean isInImmersiveMode = false;
-    private Handler mainHandler = new Handler(Looper.getMainLooper());
-    private Runnable uiHideCall = this::hideSystemUI;
+    private final Handler handler = new Handler(Looper.getMainLooper());
 
     public ImageViewerController(Context context, Toolbar toolbar) {
         super(context);
@@ -134,11 +136,11 @@ public class ImageViewerController
 
         NavigationItem.MenuBuilder menuBuilder = navigation.buildMenu();
         if (goPostCallback != null) {
-            menuBuilder.withItem(R.drawable.ic_subdirectory_arrow_left_white_24dp, this::goPostClicked);
+            menuBuilder.withItem(R.drawable.ic_fluent_arrow_reply_down_20_filled, this::goPostClicked);
         }
 
-        menuBuilder.withItem(VOLUME_ID, R.drawable.ic_volume_off_white_24dp, this::volumeClicked);
-        menuBuilder.withItem(SAVE_ID, R.drawable.ic_file_download_white_24dp, this::saveClicked);
+        menuBuilder.withItem(VOLUME_ID, R.drawable.ic_fluent_speaker_off_24_filled, this::volumeClicked);
+        menuBuilder.withItem(SAVE_ID, R.drawable.ic_fluent_arrow_download_24_filled, this::saveClicked);
 
         NavigationItem.MenuOverflowBuilder overflowBuilder = menuBuilder.withOverflow(this);
         overflowBuilder.withSubItem(R.string.action_open_browser, this::openBrowserClicked);
@@ -170,15 +172,31 @@ public class ImageViewerController
             throw new IllegalArgumentException("parentController.view not attached");
         }
 
-        waitForLayout(parentController.view.getViewTreeObserver(), view, view -> {
-            ToolbarMenuItem saveMenuItem = navigation.findItem(SAVE_ID);
-            if (saveMenuItem != null) {
-                saveMenuItem.setEnabled(false);
-            }
-
-            presenter.onViewMeasured();
+        waitForLayout(parentController.view.getViewTreeObserver(), view, view1 -> {
+            // Pager is measured, but still invisible
+            PostImage postImage = presenter.getCurrentPostImage();
+            startPreviewInTransition(postImage);
+            setTitle(postImage,
+                    presenter.getAllPostImages().indexOf(postImage),
+                    presenter.getAllPostImages().size(),
+                    postImage.spoiler()
+            );
             return true;
         });
+    }
+
+    @Override
+    public void onSearchEntered(String entered) {}
+
+    @Override
+    public void onSearchVisibilityChanged(boolean visible) {}
+
+    @Override
+    public void onNavItemSet() {
+        ToolbarMenuItem saveMenuItem = navigation.findItem(SAVE_ID);
+        if (saveMenuItem != null) {
+            saveMenuItem.setEnabled(false);
+        }
     }
 
     private void goPostClicked(ToolbarMenuItem item) {
@@ -190,13 +208,13 @@ public class ImageViewerController
             this.imageViewerCallback = imageViewerCallback;
             waitForLayout(view, view -> {
                 showSystemUI();
-                mainHandler.removeCallbacks(uiHideCall);
+                handler.removeCallbacksAndMessages(null);
                 presenter.onExit();
                 return false;
             });
         } else {
             showSystemUI();
-            mainHandler.removeCallbacks(uiHideCall);
+            handler.removeCallbacksAndMessages(null);
             presenter.onExit();
         }
     }
@@ -240,7 +258,7 @@ public class ImageViewerController
         super.onDestroy();
 
         showSystemUI();
-        mainHandler.removeCallbacks(uiHideCall);
+        handler.removeCallbacksAndMessages(null);
         getWindow(context).clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
@@ -311,7 +329,7 @@ public class ImageViewerController
     public boolean onBack() {
         if (presenter.isTransitioning()) return false;
         showSystemUI();
-        mainHandler.removeCallbacks(uiHideCall);
+        handler.removeCallbacksAndMessages(null);
         presenter.onExit();
         return true;
     }
@@ -337,8 +355,8 @@ public class ImageViewerController
         pager.setSwipingEnabled(visible);
     }
 
-    public void setPagerItems(Loadable loadable, List<PostImage> images, int initialIndex) {
-        ImageViewerAdapter adapter = new ImageViewerAdapter(images, loadable, presenter);
+    public void setPagerItems(List<PostImage> images, int initialIndex) {
+        ImageViewerAdapter adapter = new ImageViewerAdapter(images, presenter);
         pager.setAdapter(adapter);
         pager.setCurrentItem(initialIndex);
     }
@@ -379,12 +397,12 @@ public class ImageViewerController
                 ? postImage.getThumbnailUrl()
                 : postImage.imageUrl) : postImage.getThumbnailUrl(), new NetUtilsClasses.BitmapResult() {
             @Override
-            public void onBitmapFailure(Exception e) {
+            public void onBitmapFailure(HttpUrl source, Exception e) {
                 // the preview image will just remain as the last successful response; good enough
             }
 
             @Override
-            public void onBitmapSuccess(@NonNull Bitmap bitmap, boolean fromCache) {
+            public void onBitmapSuccess(HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
                 previewImage.setBitmap(bitmap);
             }
         }, previewImage.getWidth(), previewImage.getHeight());
@@ -416,7 +434,9 @@ public class ImageViewerController
     public void showVolumeMenuItem(boolean show, boolean muted) {
         ToolbarMenuItem volumeMenuItem = navigation.findItem(VOLUME_ID);
         volumeMenuItem.setVisible(show);
-        volumeMenuItem.setImage(muted ? R.drawable.ic_volume_off_white_24dp : R.drawable.ic_volume_up_white_24dp);
+        volumeMenuItem.setImage(muted
+                ? R.drawable.ic_fluent_speaker_off_24_filled
+                : R.drawable.ic_fluent_speaker_24_filled);
     }
 
     @Override
@@ -483,7 +503,7 @@ public class ImageViewerController
                 ? postImage.getThumbnailUrl()
                 : postImage.imageUrl) : postImage.getThumbnailUrl(), new NetUtilsClasses.BitmapResult() {
             @Override
-            public void onBitmapFailure(Exception e) {
+            public void onBitmapFailure(HttpUrl source, Exception e) {
                 Logger.e(
                         ImageViewerController.this,
                         "onBitmapFailure for preview in transition, cannot show correct transition bitmap",
@@ -494,7 +514,7 @@ public class ImageViewerController
             }
 
             @Override
-            public void onBitmapSuccess(@NonNull Bitmap bitmap, boolean fromCache) {
+            public void onBitmapSuccess(HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
                 previewImage.setBitmap(bitmap);
                 startAnimation.start();
             }
@@ -569,7 +589,7 @@ public class ImageViewerController
 
         Bitmap bitmap = startView.getBitmap();
         if (bitmap == null) {
-            bitmap = BitmapRepository.error;
+            bitmap = BitmapRepository.empty;
         }
 
         int[] loc = new int[2];
@@ -622,7 +642,7 @@ public class ImageViewerController
         decorView.setOnSystemUiVisibilityChangeListener(visibility -> {
             if ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0 && isInImmersiveMode) {
                 showSystemUI();
-                mainHandler.postDelayed(uiHideCall, 2500);
+                handler.postDelayed(this::hideSystemUI, 2500);
             }
         });
 
@@ -636,7 +656,7 @@ public class ImageViewerController
     public void showSystemUI(boolean show) {
         if (show) {
             showSystemUI();
-            mainHandler.postDelayed(uiHideCall, 2500);
+            handler.postDelayed(this::hideSystemUI, 2500);
         } else {
             hideSystemUI();
         }

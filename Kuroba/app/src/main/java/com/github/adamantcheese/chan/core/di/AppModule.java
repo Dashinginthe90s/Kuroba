@@ -28,11 +28,9 @@ import com.github.adamantcheese.chan.core.database.DatabaseSiteManager;
 import com.github.adamantcheese.chan.core.repository.SiteRepository;
 import com.github.adamantcheese.chan.core.saver.ImageSaver;
 import com.github.adamantcheese.chan.core.site.SiteResolver;
-import com.github.adamantcheese.chan.features.embedding.EmbeddingEngine;
 import com.github.adamantcheese.chan.features.gesture_editor.Android10GesturesExclusionZonesHolder;
 import com.github.adamantcheese.chan.ui.captcha.CaptchaHolder;
 import com.github.adamantcheese.chan.ui.settings.SavedFilesBaseDirectory;
-import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.k1rakishou.fsaf.BadPathSymbolResolutionStrategy;
 import com.github.k1rakishou.fsaf.FileChooser;
@@ -124,13 +122,6 @@ public class AppModule {
 
     @Provides
     @Singleton
-    public ThemeHelper provideThemeHelper() {
-        Logger.d(DI_TAG, "Theme helper");
-        return new ThemeHelper();
-    }
-
-    @Provides
-    @Singleton
     public ImageSaver provideImageSaver(FileManager fileManager) {
         Logger.d(DI_TAG, "Image saver");
         return new ImageSaver(fileManager);
@@ -187,13 +178,5 @@ public class AppModule {
         Logger.d(DI_TAG, "Android10GesturesExclusionZonesHolder");
 
         return new Android10GesturesExclusionZonesHolder(gson, getMinScreenSize(), getMaxScreenSize());
-    }
-
-    @Provides
-    @Singleton
-    public EmbeddingEngine provideEmbeddingEngine() {
-        Logger.d(DI_TAG, "EmbeddingEngine");
-
-        return new EmbeddingEngine();
     }
 }

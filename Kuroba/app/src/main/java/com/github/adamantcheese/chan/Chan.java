@@ -20,8 +20,6 @@ import android.app.Activity;
 import android.app.Application;
 import android.content.Context;
 import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 
 import androidx.annotation.NonNull;
 
@@ -40,7 +38,9 @@ import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.service.LastPageNotification;
 import com.github.adamantcheese.chan.ui.service.SavingNotification;
 import com.github.adamantcheese.chan.ui.service.WatchNotification;
+import com.github.adamantcheese.chan.ui.widget.CancellableToast;
 import com.github.adamantcheese.chan.utils.AndroidUtils;
+import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.adamantcheese.chan.utils.NetUtils;
 
@@ -70,7 +70,7 @@ public class Chan
     SiteRepository siteRepository;
 
     @Inject
-    BoardManager boardManager;
+    BoardManager boardManger;
 
     @Inject
     ReportManager reportManager;
@@ -88,8 +88,6 @@ public class Chan
     @Override
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
-        AndroidUtils.init(this);
-        BitmapRepository.initialize(this);
         // remove this if you need to debug some sort of event bus issue
         try {
             EventBus.builder().logNoSubscriberMessages(false).installDefaultEventBus();
@@ -107,6 +105,9 @@ public class Chan
         super.onCreate();
         registerActivityLifecycleCallbacks(this);
 
+        AndroidUtils.init(this, null);
+        BitmapRepository.initialize(this);
+
         WatchNotification.setupChannel();
         SavingNotification.setupChannel();
         LastPageNotification.setupChannel();
@@ -115,7 +116,7 @@ public class Chan
         feather.injectFields(this);
 
         siteRepository.initialize();
-        boardManager.initialize();
+        boardManger.initialize();
 
         RxJavaPlugins.setErrorHandler(e -> {
             if (e instanceof UndeliverableException) {
@@ -262,8 +263,10 @@ public class Chan
 
     @Override
     public void onActivityDestroyed(@NonNull Activity activity) {
-        new Handler(Looper.getMainLooper()).removeCallbacksAndMessages(null);
+        AndroidUtils.cleanup();
+        BackgroundUtils.cleanup();
         NetUtils.cleanup();
+        CancellableToast.cleanup();
     }
 
     public static class ForegroundChangedMessage {

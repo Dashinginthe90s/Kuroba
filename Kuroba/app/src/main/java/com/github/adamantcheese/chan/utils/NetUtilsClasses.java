@@ -65,9 +65,9 @@ public class NetUtilsClasses {
      * A response wrapper for Bitmaps, noting if the bitmap was cached or not
      */
     public interface BitmapResult {
-        void onBitmapFailure(Exception e);
+        void onBitmapFailure(HttpUrl source, Exception e);
 
-        void onBitmapSuccess(@NonNull Bitmap bitmap, boolean fromCache);
+        void onBitmapSuccess(HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache);
     }
 
     /**
@@ -98,7 +98,6 @@ public class NetUtilsClasses {
     /**
      * A standard JSON response converter, which outputs a JSONReader.
      */
-    @SuppressWarnings("ConstantConditions")
     public static class JSONConverter
             implements ResponseConverter<JsonReader> {
 
@@ -111,7 +110,6 @@ public class NetUtilsClasses {
     /**
      * A standard HTML response convertor, which outputs a Jsoup Document.
      */
-    @SuppressWarnings("ConstantConditions")
     public static class HTMLConverter
             implements ResponseConverter<Document> {
 
@@ -161,6 +159,7 @@ public class NetUtilsClasses {
         @Override
         public void cancel() {}
 
+        @SuppressWarnings("MethodDoesntCallSuperMethod")
         @NotNull
         @Override
         public Call clone() {

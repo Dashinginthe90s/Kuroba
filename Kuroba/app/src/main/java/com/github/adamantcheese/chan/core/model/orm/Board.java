@@ -125,7 +125,9 @@ public class Board
     @DatabaseField
     public boolean archive = false;
 
-    @Deprecated // public, at least
+    /**
+     * Empty constructor, generally used for parsing a board from somewhere else and adding in fields manually
+     */
     public Board() {
     }
 
@@ -250,7 +252,6 @@ public class Board
      *
      * @return copy of this board.
      */
-    @SuppressWarnings("MethodDoesntCallSuperMethod")
     public Board clone() {
         Board b = new Board();
         b.id = id;
@@ -284,33 +285,11 @@ public class Board
     }
 
     public boolean equals(Object board) {
-        if (board != null && board.getClass() == Board.class) {
-            Board b = (Board) board;
-            //@formatter:off
-            return name.equals(b.name)
-                    && code.equals(b.code)
-                    && workSafe == b.workSafe
-                    && perPage == b.perPage
-                    && pages == b.pages
-                    && maxFileSize == b.maxFileSize
-                    && maxWebmSize == b.maxWebmSize
-                    && maxCommentChars == b.maxCommentChars
-                    && bumpLimit == b.bumpLimit
-                    && imageLimit == b.imageLimit
-                    && cooldownThreads == b.cooldownThreads
-                    && cooldownReplies == b.cooldownReplies
-                    && cooldownImages == b.cooldownImages
-                    && spoilers == b.spoilers
-                    && customSpoilers == b.customSpoilers
-                    && userIds == b.userIds && codeTags == b.codeTags
-                    && preuploadCaptcha == b.preuploadCaptcha
-                    && countryFlags == b.countryFlags
-                    && mathTags == b.mathTags
-                    && description.equals(b.description)
-                    && archive == b.archive;
-            //@formatter:on
-        }
-        return false;
+        if (board == null) return false;
+        if (board.getClass() != Board.class) return false;
+        Board b = (Board) board;
+        return siteId == b.siteId && code.equals(b.code) && bumpLimit == b.bumpLimit && imageLimit == b.imageLimit
+                && cooldownImages == b.cooldownImages;
     }
 
     @Override

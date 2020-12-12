@@ -1,6 +1,5 @@
 package com.github.adamantcheese.chan.ui.helper;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
 
 import androidx.annotation.Nullable;
@@ -23,12 +22,12 @@ import java.util.List;
 import java.util.Map;
 
 import static com.github.adamantcheese.chan.Chan.instance;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class RemovedPostsHelper {
-    private Context context;
-    private ThreadPresenter presenter;
-    private RemovedPostsCallbacks callbacks;
+    private final Context context;
+    private final ThreadPresenter presenter;
+    private final RemovedPostsCallbacks callbacks;
     private @Nullable
     RemovedPostsController controller;
 
@@ -65,7 +64,6 @@ public class RemovedPostsHelper {
         List<PostHide> hiddenPosts = instance(DatabaseHideManager.class).getRemovedPostsWithThreadNo(threadNo);
         List<Post> removedPosts = new ArrayList<>();
 
-        @SuppressLint("UseSparseArrays")
         Map<Integer, PostHide> fastLookupMap = new HashMap<>();
 
         for (PostHide postHide : hiddenPosts) {

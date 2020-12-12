@@ -49,6 +49,7 @@ import com.github.adamantcheese.chan.core.site.http.HttpCall;
 import com.github.adamantcheese.chan.core.site.http.LoginRequest;
 import com.github.adamantcheese.chan.core.site.http.LoginResponse;
 import com.github.adamantcheese.chan.core.site.parser.ChanReader;
+import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.adamantcheese.chan.utils.NetUtils;
 import com.github.adamantcheese.chan.utils.NetUtilsClasses.HTMLProcessor;
@@ -63,8 +64,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Random;
 
+import kotlin.random.Random;
 import okhttp3.HttpUrl;
 import okhttp3.Request;
 
@@ -73,8 +74,6 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getPreferences;
 
 public class Chan4
         extends SiteBase {
-    private static final Random random = new Random();
-
     private ChanReader reader;
 
     public static final SiteUrlHandler URL_HANDLER = new SiteUrlHandler() {
@@ -102,9 +101,7 @@ public class Chan4
 
         @Override
         public String desktopUrl(Loadable loadable, int postNo) {
-            if (loadable.isCatalogMode()) {
-                return "https://boards.4chan.org/" + loadable.boardCode + "/thread/" + (postNo > 0 ? postNo : "");
-            } else if (loadable.isThreadMode()) {
+            if (loadable.isThreadMode()) {
                 String url = "https://boards.4chan.org/" + loadable.boardCode + "/thread/" + loadable.no;
                 if (postNo > 0 && loadable.no != postNo) {
                     url += "#p" + postNo;
@@ -195,7 +192,7 @@ public class Chan4
             if (spoiler) {
                 HttpUrl.Builder image = s.newBuilder().addPathSegment("image");
                 if (post.board.customSpoilers >= 0) {
-                    int i = random.nextInt(post.board.customSpoilers) + 1;
+                    int i = Random.Default.nextInt(post.board.customSpoilers) + 1;
                     image.addPathSegment("spoiler-" + post.board.code + i + ".png");
                 } else {
                     image.addPathSegment("spoiler.png");
@@ -209,7 +206,6 @@ public class Chan4
             }
         }
 
-        @SuppressWarnings("ConstantConditions")
         @Override
         public HttpUrl icon(String icon, Map<String, String> arg) {
             HttpUrl.Builder b = s.newBuilder().addPathSegment("image");
@@ -278,7 +274,7 @@ public class Chan4
         }
     };
 
-    private CommonCallModifier siteCallModifier = new CommonCallModifier() {
+    private final CommonCallModifier siteCallModifier = new CommonCallModifier() {
         @Override
         public void modifyHttpCall(HttpCall httpCall, Request.Builder requestBuilder) {
             if (actions.isLoggedIn()) {
@@ -302,7 +298,7 @@ public class Chan4
         }
     };
 
-    private SiteActions actions = new SiteActions() {
+    private final SiteActions actions = new SiteActions() {
         @Override
         public void boards(final BoardsListener listener) {
             NetUtils.makeJsonRequest(endpoints.boards(), new ResponseResult<Boards>() {
@@ -340,17 +336,16 @@ public class Chan4
             NetUtils.makeHTMLRequest(endpoints().archive(board), new ResponseResult<InternalSiteArchive>() {
                 @Override
                 public void onFailure(Exception e) {
-                    archiveListener.onArchiveError();
+                    BackgroundUtils.runOnMainThread(archiveListener::onArchiveError);
                 }
 
                 @Override
                 public void onSuccess(InternalSiteArchive result) {
-                    archiveListener.onArchive(result);
+                    BackgroundUtils.runOnMainThread(() -> archiveListener.onArchive(result));
                 }
             }, new HTMLProcessor<InternalSiteArchive>() {
                 @Override
-                public InternalSiteArchive process(Document response)
-                        throws Exception {
+                public InternalSiteArchive process(Document response) {
                     List<InternalSiteArchive.ArchiveItem> items = new ArrayList<>();
 
                     Element table = response.getElementById("arc-list");
@@ -481,6 +476,7 @@ public class Chan4
         // token was renamed, before it meant the username, now it means the token returned
         // from the server that the cookie is set to.
         passToken = new StringSetting(p, "preference_pass_id", "");
+        icon().get(icon -> {});
     }
 
     @Override
@@ -572,6 +568,11 @@ public class Chan4
     @NonNull
     @Override
     public ChunkDownloaderSiteProperties getChunkDownloaderSiteProperties() {
-        return new ChunkDownloaderSiteProperties(true, true);
+        // For preloading in ImageViewerPresenter, a max of 3 images are set to preload
+        // https://developers.cloudflare.com/workers/platform/limits#simultaneous-open-connections seems to be true for any
+        // Cloudflare connection; it prevents more than 6 concurrent connections to its resources, so we shouldn't connect more than that
+        // Or at least minimize that count; fast downloads will reduce the count, but this is just insurance
+        // 3 * chunks <= 6 then, so 2 max chunks per download
+        return new ChunkDownloaderSiteProperties(2, true, true);
     }
 }

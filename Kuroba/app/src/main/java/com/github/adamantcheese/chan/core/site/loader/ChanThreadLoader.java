@@ -51,7 +51,6 @@ import okhttp3.Call;
 import okhttp3.HttpUrl;
 
 import static com.github.adamantcheese.chan.Chan.inject;
-import static com.github.adamantcheese.chan.utils.StringUtils.maskPostNo;
 
 /**
  * A ChanThreadLoader is the loader for Loadables.
@@ -220,7 +219,6 @@ public class ChanThreadLoader {
         clearPendingRunnable();
 
         int watchTimeout = WATCH_TIMEOUTS[currentTimeout];
-        Logger.d(this, "Scheduled reload in " + watchTimeout + "s");
 
         pendingFuture =
                 BackgroundUtils.backgroundScheduledService.schedule(() -> BackgroundUtils.runOnMainThread(() -> {
@@ -230,8 +228,6 @@ public class ChanThreadLoader {
     }
 
     public void clearTimer() {
-        BackgroundUtils.ensureMainThread();
-
         currentTimeout = 0;
         clearPendingRunnable();
     }
@@ -251,17 +247,18 @@ public class ChanThreadLoader {
     }
 
     private Call getData() {
-        Logger.d(this, "Requested /" + loadable.boardCode + "/, " + maskPostNo(loadable.no));
-
-        List<Post> cached;
+        List<Post> cachedClones = new ArrayList<>();
         synchronized (this) {
-            cached = thread == null ? new ArrayList<>() : thread.getPosts();
+            List<Post> cached = thread == null ? new ArrayList<>() : thread.getPosts();
+            for (Post p : cached) {
+                cachedClones.add(p.clone());
+            }
         }
 
         return NetUtils.makeJsonRequest(getChanUrl(loadable), new ResponseResult<ChanLoaderResponse>() {
             @Override
             public void onFailure(Exception e) {
-                onErrorResponse(e);
+                BackgroundUtils.runOnMainThread(() -> onErrorResponse(e));
             }
 
             @Override
@@ -269,7 +266,7 @@ public class ChanThreadLoader {
                 clearTimer();
                 BackgroundUtils.runOnBackgroundThread(() -> onResponse(result));
             }
-        }, new ChanReaderParser(loadable, cached, null));
+        }, new ChanReaderParser(loadable, cachedClones, null));
     }
 
     private HttpUrl getChanUrl(Loadable loadable) {
@@ -300,17 +297,19 @@ public class ChanThreadLoader {
             onResponseInternal(response);
         } catch (Throwable e) {
             Logger.e(ChanThreadLoader.this, "onResponse error", e);
-            notifyAboutError(e instanceof Exception ? (Exception) e : new Exception(e));
+            BackgroundUtils.runOnMainThread(() -> notifyAboutError(e instanceof Exception
+                    ? (Exception) e
+                    : new Exception(e)));
         }
     }
 
-    private Boolean onResponseInternal(ChanLoaderResponse response) {
+    private void onResponseInternal(ChanLoaderResponse response) {
         BackgroundUtils.ensureBackgroundThread();
 
         // Normal thread, not archived/deleted/closed
         if (response == null || response.posts == null || response.posts.isEmpty()) {
-            onErrorResponse(new Exception("Post size is 0"));
-            return false;
+            BackgroundUtils.runOnMainThread(() -> onErrorResponse(new Exception("Post size is 0")));
+            return;
         }
 
         synchronized (this) {
@@ -326,7 +325,7 @@ public class ChanThreadLoader {
         }
 
         ChanThread localThread = thread;
-        if (loadable.isThreadMode() && thread.getPostsCount() > 0) {
+        if (loadable.isThreadMode() && thread.getPosts().size() > 0) {
             // Replace some op parameters to the real op (index 0).
             // This is done on the main thread to avoid race conditions.
             Post realOp = thread.getOp();
@@ -359,22 +358,23 @@ public class ChanThreadLoader {
 
         lastLoadTime = System.currentTimeMillis();
 
-        int postCount = localThread.getPostsCount();
+        int postCount = localThread.getPosts().size();
         if (postCount > lastPostCount) {
+            // fresh posts, reset timer to minimum 10 seconds, or if sticky 30
             lastPostCount = postCount;
-            currentTimeout = 0;
+            currentTimeout = localThread.getOp().isSticky() ? 3 : 0;
         } else {
+            // no new posts, increase timer
             currentTimeout = Math.min(currentTimeout + 1, WATCH_TIMEOUTS.length - 1);
         }
 
-        DatabaseUtils.runTaskAsync(databaseLoadableManager.updateLoadable(loadable));
+        DatabaseUtils.runTaskAsync(databaseLoadableManager.updateLoadable(loadable, false));
 
         BackgroundUtils.runOnMainThread(() -> {
             for (ChanLoaderCallback l : listeners) {
                 l.onChanLoaderData(localThread);
             }
         });
-        return true;
     }
 
     private void onErrorResponse(Exception error) {
@@ -395,10 +395,7 @@ public class ChanThreadLoader {
     }
 
     private void clearPendingRunnable() {
-        BackgroundUtils.ensureMainThread();
-
         if (pendingFuture != null) {
-            Logger.d(this, "Cleared runnable");
             pendingFuture.cancel(false);
             pendingFuture = null;
         }
@@ -412,7 +409,7 @@ public class ChanThreadLoader {
 
     public static class ChanLoaderException
             extends Exception {
-        private Exception exception;
+        private final Exception exception;
 
         public ChanLoaderException(Exception exception) {
             this.exception = exception;

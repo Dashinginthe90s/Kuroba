@@ -15,11 +15,14 @@ import com.github.adamantcheese.chan.core.site.http.ProgressRequestBody;
 
 import org.jetbrains.annotations.NotNull;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.Call;
@@ -32,6 +35,7 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 
 import static com.github.adamantcheese.chan.Chan.instance;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
 import static java.lang.Runtime.getRuntime;
 
 public class NetUtils {
@@ -76,28 +80,42 @@ public class NetUtils {
     }
 
     public static Call makeBitmapRequest(
-            @NonNull final HttpUrl url, @NonNull final NetUtilsClasses.BitmapResult result
+            final HttpUrl url, @NonNull final NetUtilsClasses.BitmapResult result
     ) {
         return makeBitmapRequest(url, result, 0, 0);
     }
 
+    /**
+     * Request a bitmap without resizing.
+     *
+     * @param url    The request URL.
+     * @param result The callback for this call.
+     * @return An enqueued bitmap call. WILL RUN RESULT ON MAIN THREAD!
+     */
     public static Call makeBitmapRequest(
-            @NonNull final HttpUrl url,
-            @NonNull final NetUtilsClasses.BitmapResult result,
-            final int width,
-            final int height
+            final HttpUrl url, @NonNull final NetUtilsClasses.BitmapResult result, final int width, final int height
     ) {
         Pair<Call, Callback> ret = makeBitmapRequest(url, result, width, height, true);
         return ret == null ? null : ret.first;
     }
 
+    /**
+     * Request a bitmap with resizing.
+     *
+     * @param url    The request URL.
+     * @param result The callback for this call.
+     * @param width  The requested width of the result
+     * @param height The requested height of the result
+     * @return An enqueued bitmap call. WILL RUN RESULT ON MAIN THREAD!
+     */
     public static Pair<Call, Callback> makeBitmapRequest(
-            @NonNull final HttpUrl url,
+            final HttpUrl url,
             @NonNull final NetUtilsClasses.BitmapResult result,
             final int width,
             final int height,
             boolean enqueue
     ) {
+        if (url == null) return null;
         synchronized (NetUtils.class) {
             List<NetUtilsClasses.BitmapResult> results = resultListeners.get(url);
             if (results != null) {
@@ -114,8 +132,9 @@ public class NetUtils {
             performBitmapSuccess(url, cachedBitmap, true);
             return null;
         }
-        Call call =
-                instance(OkHttpClientWithUtils.class).getBitmapClient().newCall(new Request.Builder().url(url).build());
+        Call call = instance(OkHttpClientWithUtils.class).newCall(new Request.Builder().url(url)
+                .addHeader("Referer", url.toString())
+                .build());
         Callback callback = new Callback() {
             @Override
             public void onFailure(@NotNull Call call, @NotNull IOException e) {
@@ -137,26 +156,42 @@ public class NetUtils {
                     return;
                 }
 
-                BackgroundUtils.runOnBackgroundThread(() -> {
-                    try (ResponseBody body = response.body()) {
-                        if (body == null) {
-                            performBitmapFailure(url, new NullPointerException("No response data"));
-                            return;
-                        }
-                        Bitmap bitmap = BitmapUtils.decode(body.byteStream(), width, height);
-                        if (bitmap == null) {
-                            performBitmapFailure(url, new NullPointerException("Bitmap returned is null"));
-                            return;
-                        }
-                        imageCache.put(url, bitmap);
-                        performBitmapSuccess(url, bitmap, false);
-                    } catch (Exception e) {
-                        performBitmapFailure(url, e);
-                    } catch (OutOfMemoryError e) {
-                        getRuntime().gc();
-                        performBitmapFailure(url, new IOException(e));
+                try (ResponseBody body = response.body()) {
+                    if (body == null) {
+                        performBitmapFailure(url, new NullPointerException("No response data"));
+                        return;
                     }
-                });
+                    Bitmap result;
+                    String fileExtension = StringUtils.extractFileNameExtension(url.toString());
+                    if (fileExtension != null && fileExtension.equalsIgnoreCase("webm")) {
+                        File tempFile =
+                                File.createTempFile(UUID.randomUUID().toString(), "tmp", getAppContext().getCacheDir());
+                        try (FileOutputStream output = new FileOutputStream(tempFile)) {
+                            output.write(response.body().bytes());
+                        }
+                        result = BitmapUtils.decodeFilePreviewImage(tempFile, 0, 0, null, false);
+                        tempFile.delete();
+                    } else {
+                        ExceptionCatchingInputStream wrappedStream =
+                                new ExceptionCatchingInputStream(body.byteStream());
+                        result = BitmapUtils.decode(wrappedStream, width, height);
+                        if (wrappedStream.getException() != null) {
+                            performBitmapFailure(url, wrappedStream.getException());
+                            return;
+                        }
+                    }
+                    if (result == null) {
+                        performBitmapFailure(url, new NullPointerException("Bitmap returned is null"));
+                        return;
+                    }
+                    imageCache.put(url, result);
+                    performBitmapSuccess(url, result, false);
+                } catch (Exception e) {
+                    performBitmapFailure(url, e);
+                } catch (OutOfMemoryError e) {
+                    getRuntime().gc();
+                    performBitmapFailure(url, new IOException(e));
+                }
             }
         };
         if (enqueue) {
@@ -172,7 +207,7 @@ public class NetUtils {
         if (results == null) return;
         for (final NetUtilsClasses.BitmapResult bitmapResult : results) {
             if (bitmapResult == null) continue;
-            BackgroundUtils.runOnMainThread(() -> bitmapResult.onBitmapSuccess(bitmap, fromCache));
+            BackgroundUtils.runOnMainThread(() -> bitmapResult.onBitmapSuccess(url, bitmap, fromCache));
         }
     }
 
@@ -181,7 +216,7 @@ public class NetUtils {
         if (results == null) return;
         for (final NetUtilsClasses.BitmapResult bitmapResult : results) {
             if (bitmapResult == null) continue;
-            BackgroundUtils.runOnMainThread(() -> bitmapResult.onBitmapFailure(e));
+            BackgroundUtils.runOnMainThread(() -> bitmapResult.onBitmapFailure(url, e));
         }
     }
 
@@ -193,6 +228,15 @@ public class NetUtils {
         imageCache.put(url, bitmap);
     }
 
+    /**
+     * Request some JSON, no timeout.
+     *
+     * @param url    The request URL.
+     * @param result The callback for this call.
+     * @param parser The parser that will process the response into your result
+     * @param <T>    Your type
+     * @return An enqueued JSON call. WILL RUN RESULT ON BACKGROUND OKHTTP THREAD!
+     */
     public static <T> Call makeJsonRequest(
             @NonNull final HttpUrl url,
             @NonNull final NetUtilsClasses.ResponseResult<T> result,
@@ -201,6 +245,16 @@ public class NetUtils {
         return makeJsonRequest(url, result, parser, 0);
     }
 
+    /**
+     * Request some JSON, with a timeout.
+     *
+     * @param url       The request URL.
+     * @param result    The callback for this call.
+     * @param parser    The parser that will process the response into your result
+     * @param <T>       Your type
+     * @param timeoutMs Optional timeout in milliseconds
+     * @return An enqueued JSON call. WILL RUN RESULT ON BACKGROUND OKHTTP THREAD!
+     */
     public static <T> Call makeJsonRequest(
             @NonNull final HttpUrl url,
             @NonNull final NetUtilsClasses.ResponseResult<T> result,
@@ -210,6 +264,15 @@ public class NetUtils {
         return makeRequest(url, new NetUtilsClasses.JSONConverter(), parser, result, timeoutMs);
     }
 
+    /**
+     * Request some HTML, no timeout.
+     *
+     * @param url    The request URL.
+     * @param result The callback for this call.
+     * @param reader The reader that will process the response into your result
+     * @param <T>    Your type
+     * @return An enqueued HTML call. WILL RUN RESULT ON BACKGROUND OKHTTP THREAD!
+     */
     @SuppressWarnings("UnusedReturnValue")
     public static <T> Call makeHTMLRequest(
             @NonNull final HttpUrl url,
@@ -219,6 +282,7 @@ public class NetUtils {
         return makeRequest(url, new NetUtilsClasses.HTMLConverter(), reader, result, 0);
     }
 
+    //internal helper method, you probably want the one below this
     private static <T, X> Call makeRequest(
             @NonNull final HttpUrl url,
             @NonNull final NetUtilsClasses.ResponseConverter<X> converter,
@@ -232,6 +296,16 @@ public class NetUtils {
     /**
      * This is the mothership of this class mostly, it does all the heavy lifting for you once provided the proper stuff
      * Generally don't use this! Use one of the wrapper methods instead.
+     *
+     * @param url       The request URL.
+     * @param converter The converter that will convert the response into a form the reader can process.
+     * @param reader    The reader that will process the response into your result.
+     * @param result    The callback for this call.
+     * @param <T>       Your result type
+     * @param <X>       Your processor type
+     * @param timeoutMs Optional timeout in milliseconds
+     * @param enqueue   whether or not to enqueue this call as a step
+     * @return An optionally enqueued call along with the callback it is associated with. WILL RUN RESULT ON BACKGROUND OKHTTP THREAD!
      */
     public static <T, X> Pair<Call, Callback> makeCall(
             @NonNull final HttpUrl url,
@@ -248,14 +322,13 @@ public class NetUtils {
         Callback callback = new Callback() {
             @Override
             public void onFailure(@NotNull Call call, @NotNull IOException e) {
-                BackgroundUtils.runOnMainThread(() -> result.onFailure(e));
+                result.onFailure(e);
             }
 
             @Override
             public void onResponse(@NotNull Call call, @NotNull Response response) {
                 if (!response.isSuccessful()) {
-                    BackgroundUtils.runOnMainThread(() -> result.onFailure(new NetUtilsClasses.HttpCodeException(
-                            response.code())));
+                    result.onFailure(new NetUtilsClasses.HttpCodeException(response.code()));
                     response.close();
                     return;
                 }
@@ -263,9 +336,9 @@ public class NetUtils {
                 try {
                     T read = reader.process(converter.convert(call.request().url(), response.body()));
                     if (read == null) throw new NullPointerException("Process returned null!");
-                    BackgroundUtils.runOnMainThread(() -> result.onSuccess(read));
+                    result.onSuccess(read);
                 } catch (Exception e) {
-                    BackgroundUtils.runOnMainThread(() -> result.onFailure(e));
+                    result.onFailure(e);
                 } finally {
                     response.close();
                 }
@@ -277,6 +350,11 @@ public class NetUtils {
         return new Pair<>(call, callback);
     }
 
+    /**
+     * @param url    The request URL.
+     * @param result The callback for this call.
+     * @return An enqueued headers call. WILL RUN RESULT ON BACKGROUND THREAD!
+     */
     public static Call makeHeadersRequest(
             @NonNull final HttpUrl url, @NonNull final NetUtilsClasses.ResponseResult<Headers> result
     ) {
@@ -284,19 +362,17 @@ public class NetUtils {
         call.enqueue(new Callback() {
             @Override
             public void onFailure(@NotNull Call call, @NotNull IOException e) {
-                BackgroundUtils.runOnMainThread(() -> result.onFailure(e));
+                BackgroundUtils.runOnBackgroundThread(() -> result.onFailure(e));
             }
 
             @Override
             public void onResponse(@NotNull Call call, @NotNull Response response) {
                 if (!response.isSuccessful()) {
-                    BackgroundUtils.runOnMainThread(() -> result.onFailure(new NetUtilsClasses.HttpCodeException(
+                    BackgroundUtils.runOnBackgroundThread(() -> result.onFailure(new NetUtilsClasses.HttpCodeException(
                             response.code())));
-                    response.close();
-                    return;
+                } else {
+                    BackgroundUtils.runOnBackgroundThread(() -> result.onSuccess(response.headers()));
                 }
-
-                BackgroundUtils.runOnMainThread(() -> result.onSuccess(response.headers()));
                 response.close();
             }
         });

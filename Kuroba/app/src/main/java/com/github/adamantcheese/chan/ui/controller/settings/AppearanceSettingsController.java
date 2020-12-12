@@ -50,15 +50,10 @@ public class AppearanceSettingsController
         super.onCreate();
 
         navigation.setTitle(R.string.settings_screen_appearance);
-
-        setupLayout();
-
-        populatePreferences();
-
-        buildPreferences();
     }
 
-    private void populatePreferences() {
+    @Override
+    protected void populatePreferences() {
         // Appearance group
         {
             SettingsGroup appearance = new SettingsGroup(R.string.settings_group_appearance);
@@ -84,6 +79,12 @@ public class AppearanceSettingsController
                     ChanSettings.neverHideToolbar,
                     R.string.setting_never_hide_toolbar,
                     R.string.empty
+            )));
+
+            requiresUiRefresh.add(layout.add(new BooleanSettingView(this,
+                    ChanSettings.alwaysShowPostOptions,
+                    "Always show post options",
+                    "Always displays the reply name, options, and subject field (if applicable)"
             )));
 
             requiresRestart.add(layout.add(new BooleanSettingView(this,

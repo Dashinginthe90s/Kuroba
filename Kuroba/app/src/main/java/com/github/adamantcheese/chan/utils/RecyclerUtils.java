@@ -16,11 +16,22 @@
  */
 package com.github.adamantcheese.chan.utils;
 
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Rect;
+import android.graphics.drawable.ColorDrawable;
 import android.view.View;
 
+import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.github.adamantcheese.chan.R;
+import com.github.adamantcheese.chan.core.settings.ChanSettings;
+
 import java.lang.reflect.Field;
+
+import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 
 public class RecyclerUtils {
     private static final String TAG = "RecyclerUtils";
@@ -46,5 +57,93 @@ public class RecyclerUtils {
             top = layoutManager.getDecoratedTop(topChild) - params.topMargin - recyclerView.getPaddingTop();
         }
         return new int[]{index, top};
+    }
+
+    // From https://github.com/DhruvamSharma/Recycler-View-Series; comments are there
+    public static RecyclerView.ItemDecoration getDividerDecoration(
+            Context context, ShowDividerFunction shouldShowDivider
+    ) {
+        final ColorDrawable divider = new ColorDrawable(getAttrColor(context, R.attr.divider_color)) {
+            @Override
+            public int getIntrinsicHeight() {
+                return dp(context, 1);
+            }
+
+            @Override
+            public int getIntrinsicWidth() {
+                return dp(context, 1);
+            }
+        };
+
+        return new RecyclerView.ItemDecoration() {
+            @Override
+            public void onDraw(@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
+                super.onDraw(c, parent, state);
+                int paddingPx = dp(parent.getContext(), ChanSettings.fontSize.get() - 6);
+                for (int i = 0; i < parent.getChildCount(); i++) {
+                    View child = parent.getChildAt(i);
+                    if (shouldShowDivider.shouldShowDivider(parent.getAdapter().getItemCount(),
+                            parent.getChildAdapterPosition(child)
+                    )) {
+                        RecyclerView.LayoutParams params = (RecyclerView.LayoutParams) child.getLayoutParams();
+
+                        int dividerTop, dividerBottom;
+                        if (shouldShowDivider.showDividerTop()) {
+                            dividerTop = child.getTop() - params.topMargin;
+                            dividerBottom = dividerTop - dp(1);
+                        } else {
+                            dividerTop = child.getBottom() + params.bottomMargin;
+                            dividerBottom = dividerTop + dp(1);
+                        }
+
+                        divider.setBounds(paddingPx, dividerTop, parent.getWidth() - paddingPx, dividerBottom);
+                        divider.draw(c);
+                    }
+                }
+            }
+
+            @Override
+            public void getItemOffsets(
+                    @NonNull Rect outRect,
+                    @NonNull View view,
+                    @NonNull RecyclerView parent,
+                    @NonNull RecyclerView.State state
+            ) {
+                super.getItemOffsets(outRect, view, parent, state);
+                if (shouldShowDivider.shouldShowDivider(parent.getAdapter().getItemCount(),
+                        parent.getChildAdapterPosition(view)
+                )) {
+                    if (shouldShowDivider.showDividerTop()) {
+                        outRect.bottom = dp(1);
+                    } else {
+                        outRect.top = dp(1);
+                    }
+                }
+            }
+        };
+    }
+
+    public static RecyclerView.ItemDecoration getBottomDividerDecoration(Context context) {
+        return getDividerDecoration(context, new ShowDividerFunction() {
+            @Override
+            public boolean shouldShowDivider(int adapterSize, int adapterPosition) {
+                // ignore the last item
+                return adapterPosition != adapterSize - 1;
+            }
+
+            @Override
+            public boolean showDividerTop() {
+                return false;
+            }
+        });
+    }
+
+    public abstract static class ShowDividerFunction {
+        public abstract boolean shouldShowDivider(int adapterSize, int adapterPosition);
+
+        /**
+         * @return true if the divider be draw on top instead of on the bottom
+         */
+        public abstract boolean showDividerTop();
     }
 }

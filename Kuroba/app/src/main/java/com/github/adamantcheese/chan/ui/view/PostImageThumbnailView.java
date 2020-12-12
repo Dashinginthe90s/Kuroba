@@ -30,7 +30,6 @@ import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.cache.FileCacheListener;
 import com.github.adamantcheese.chan.core.cache.FileCacheV2;
 import com.github.adamantcheese.chan.core.cache.downloader.CancelableDownload;
-import com.github.adamantcheese.chan.core.cache.downloader.DownloadRequestExtraInfo;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
@@ -44,15 +43,15 @@ import java.io.File;
 import okhttp3.HttpUrl;
 
 import static com.github.adamantcheese.chan.utils.AndroidUtils.setClipboardContent;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.showToast;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class PostImageThumbnailView
         extends FixedRatioThumbnailView
         implements View.OnLongClickListener {
     private PostImage postImage;
-    private Drawable playIcon;
-    private Rect bounds = new Rect();
-    private float decodeSize;
+    private final Drawable playIcon;
+    private final Rect bounds = new Rect();
+    private final float decodeSize;
 
     private CancelableDownload fullsizeDownload;
 
@@ -68,7 +67,7 @@ public class PostImageThumbnailView
         super(context, attrs, defStyle);
         this.setOnLongClickListener(this);
 
-        playIcon = context.getDrawable(R.drawable.ic_play_circle_outline_white_24dp);
+        playIcon = context.getDrawable(R.drawable.ic_fluent_play_circle_24_regular);
 
         TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.PostImageThumbnailView);
         try {
@@ -78,60 +77,57 @@ public class PostImageThumbnailView
         }
     }
 
-    public void setPostImage(PostImage postImage) {
-        if (this.postImage != postImage) {
-            this.postImage = postImage;
-            setUrl(null);
+    public void setPostImage(final PostImage postImage) {
+        if (this.postImage == postImage) return;
+
+        this.postImage = postImage;
+        int width = decodeSize == -1 ? getWidth() : (int) decodeSize;
+        int height = decodeSize == -1 ? getHeight() : (int) decodeSize;
+
+        if (postImage != null) {
+            setUrl(postImage.getThumbnailUrl(), width, height);
+        } else {
+            setUrl(null, 0, 0);
+            return;
+        }
+
+        if (ChanSettings.shouldUseFullSizeImage(postImage)) {
             if (fullsizeDownload != null) {
                 fullsizeDownload.cancel();
                 fullsizeDownload = null;
             }
-
-            if (postImage == null) {
-                return;
-            }
-
-            int width = decodeSize == -1 ? getWidth() : (int) decodeSize;
-            int height = decodeSize == -1 ? getHeight() : (int) decodeSize;
-
-            if (ChanSettings.shouldUseFullSizeImage(postImage)) {
-                HttpUrl url = postImage.spoiler() ? postImage.getThumbnailUrl() : postImage.imageUrl;
-                Bitmap cached = NetUtils.getCachedBitmap(url);
-                if (cached != null && cached.getWidth() == width && cached.getHeight() == height) {
-                    onBitmapSuccess(cached, true);
-                } else {
-                    fullsizeDownload = Chan.instance(FileCacheV2.class).enqueueChunkedDownloadFileRequest(url,
-                            new DownloadRequestExtraInfo(postImage.size, postImage.fileHash),
-                            new FileCacheListener() {
-                                @Override
-                                public void onSuccess(RawFile file, boolean immediate) {
-                                    BackgroundUtils.runWithDefaultExecutor(() -> BitmapUtils.decodeFile(new File(file.getFullPath()),
-                                            width * 2,
-                                            height * 2
-                                    ), result -> {
-                                        if (result != null) {
-                                            NetUtils.storeExternalBitmap(url, result);
-                                            onBitmapSuccess(result, immediate);
-                                        } else {
-                                            onBitmapFailure(new NullPointerException("Failed to decode bitmap."));
-                                        }
-                                    });
-                                }
-
-                                @Override
-                                public void onFail(Exception exception) {
-                                    onBitmapFailure(exception);
-                                }
-
-                                @Override
-                                public void onNotFound() {
-                                    onBitmapFailure(new NetUtilsClasses.HttpCodeException(404));
-                                }
-                            }
-                    );
-                }
+            HttpUrl url = postImage.spoiler() ? postImage.getThumbnailUrl() : postImage.imageUrl;
+            Bitmap cached = NetUtils.getCachedBitmap(url);
+            if (cached != null && cached.getWidth() == width && cached.getHeight() == height) {
+                onBitmapSuccess(url, cached, true);
             } else {
-                setUrl(postImage.getThumbnailUrl(), width, height);
+                fullsizeDownload =
+                        Chan.instance(FileCacheV2.class).enqueueNormalDownloadFileRequest(url, new FileCacheListener() {
+                            @Override
+                            public void onSuccess(RawFile file, boolean immediate) {
+                                BackgroundUtils.runWithDefaultExecutor(() -> BitmapUtils.decodeFile(new File(file.getFullPath()),
+                                        width * 2,
+                                        height * 2
+                                ), result -> {
+                                    if (result != null) {
+                                        NetUtils.storeExternalBitmap(url, result);
+                                        onBitmapSuccess(url, result, immediate);
+                                    } else {
+                                        onFail(new NullPointerException("Failed to decode bitmap."));
+                                    }
+                                });
+                            }
+
+                            @Override
+                            public void onFail(Exception exception) {
+                                onBitmapFailure(url, exception);
+                            }
+
+                            @Override
+                            public void onNotFound() {
+                                onFail(new NetUtilsClasses.HttpCodeException(404));
+                            }
+                        });
             }
         }
     }
@@ -153,7 +149,7 @@ public class PostImageThumbnailView
 
     @Override
     public boolean onLongClick(View v) {
-        if (postImage == null || postImage.imageUrl == null || !ChanSettings.enableLongPressURLCopy.get()) {
+        if (postImage == null || !ChanSettings.enableLongPressURLCopy.get()) {
             return false;
         }
 

@@ -3,6 +3,7 @@ package com.github.adamantcheese.chan.core.cache.stream;
 import android.net.Uri;
 import android.util.Range;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.github.adamantcheese.chan.core.di.NetModule;
@@ -56,12 +57,12 @@ public class WebmStreamingDataSource
             }
         }
 
-        private List<Range<Long>> cachedRanges = new ArrayList<>();
-        private byte[] cachedRangesData;
+        private final List<Range<Long>> cachedRanges = new ArrayList<>();
+        private final byte[] cachedRangesData;
         private long pos = 0;
-        private long fileLength;
+        private final long fileLength;
         private boolean firedCacheComplete = false;
-        private List<Runnable> listeners = new ArrayList<>();
+        private final List<Runnable> listeners = new ArrayList<>();
 
         PartialFileCache(long fileLength) {
             this.fileLength = fileLength;
@@ -213,18 +214,18 @@ public class WebmStreamingDataSource
         }
     }
 
-    private FileManager fileManager;
-    private HttpDataSource dataSource;
+    private final FileManager fileManager;
+    private final HttpDataSource dataSource;
     private PartialFileCache partialFileCache;
     private byte[] dataToFillCache = null;
     private int dataToFillCacheLength = 0;
     private PartialFileCache.RegionStats activeRegionStats;
     private Range<Long> httpActiveRange;
-    private List<Callback> listeners = new ArrayList<>();
+    private final List<Callback> listeners = new ArrayList<>();
 
-    private RawFile file;
+    private final RawFile file;
     @Nullable
-    private Uri uri;
+    private final Uri uri;
 
     private long pos;
     private long end;
@@ -286,7 +287,7 @@ public class WebmStreamingDataSource
     }
 
     @Override
-    public long open(DataSpec dataSpec)
+    public long open(@NonNull DataSpec dataSpec)
             throws IOException {
         if (!prepared) {
             prepare();
@@ -344,7 +345,7 @@ public class WebmStreamingDataSource
     }
 
     @Override
-    public int read(byte[] buffer, int offset, int readLength)
+    public int read(@NonNull byte[] buffer, int offset, int readLength)
             throws IOException {
         if (readLength == 0) {
             return 0;

@@ -29,8 +29,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class PostPopupHelper {
-    private Context context;
-    private ThreadPresenter presenter;
+    private final Context context;
+    private final ThreadPresenter presenter;
     private final PostPopupHelperCallback callback;
 
     private final List<RepliesData> dataQueue = new ArrayList<>();
@@ -48,7 +48,10 @@ public class PostPopupHelper {
         dataQueue.add(data);
 
         if (dataQueue.size() == 1) {
-            present();
+            if (presentingController == null) {
+                presentingController = new PostRepliesController(context, this, presenter);
+                callback.presentController(presentingController);
+            }
         }
 
         if (presenter.getLoadable() == null) {
@@ -97,7 +100,7 @@ public class PostPopupHelper {
 
     public void postClicked(Post p) {
         popAll();
-        presenter.highlightPost(p);
+        presenter.highlightPostNo(p.no);
         presenter.scrollToPost(p, true);
     }
 
@@ -105,13 +108,6 @@ public class PostPopupHelper {
         if (presentingController != null) {
             presentingController.stopPresenting();
             presentingController = null;
-        }
-    }
-
-    private void present() {
-        if (presentingController == null) {
-            presentingController = new PostRepliesController(context, this, presenter);
-            callback.presentController(presentingController);
         }
     }
 

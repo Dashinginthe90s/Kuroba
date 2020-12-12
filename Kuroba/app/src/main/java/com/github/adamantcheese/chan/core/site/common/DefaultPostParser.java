@@ -30,9 +30,7 @@ import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.orm.Filter;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.parser.CommentParser;
-import com.github.adamantcheese.chan.core.site.parser.CommentParserHelper;
 import com.github.adamantcheese.chan.core.site.parser.PostParser;
-import com.github.adamantcheese.chan.features.embedding.EmbeddingEngine;
 import com.github.adamantcheese.chan.ui.text.AbsoluteSizeSpanHashed;
 import com.github.adamantcheese.chan.ui.text.ForegroundColorSpanHashed;
 import com.github.adamantcheese.chan.ui.theme.Theme;
@@ -62,7 +60,7 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.sp;
 @AnyThread
 public class DefaultPostParser
         implements PostParser {
-    private CommentParser commentParser;
+    private final CommentParser commentParser;
     @Inject
     private FilterEngine filterEngine;
 
@@ -145,7 +143,7 @@ public class DefaultPostParser
         }
 
         if (!TextUtils.isEmpty(builder.posterId)) {
-            idSpan = new SpannableString("  ID: " + builder.posterId + "  ");
+            idSpan = new SpannableString("  " + builder.posterId + "  ");
             idSpan.setSpan(new ForegroundColorSpanHashed(getContrastColor(builder.idColor)), 0, idSpan.length(), 0);
             idSpan.setSpan(new BackgroundColorSpan(builder.idColor), 0, idSpan.length(), 0);
             idSpan.setSpan(new AbsoluteSizeSpanHashed(detailsSizePx), 0, idSpan.length(), 0);
@@ -192,22 +190,18 @@ public class DefaultPostParser
             Logger.e(this, "Error parsing comment html", e);
         }
 
-        EmbeddingEngine.addPostImages(post);
-
         return total;
     }
 
     private SpannableStringBuilder parseNode(@NonNull Theme theme, Post.Builder post, Callback callback, Node node) {
         if (node instanceof TextNode) {
-            String text = ((TextNode) node).text();
+            String text = ((TextNode) node).getWholeText();
             if (ChanSettings.enableEmoji.get() && !( //emoji parse disable for [code] and [eqn]
                     (node.parent() instanceof Element && (((Element) node.parent()).hasClass("prettyprint")))
                             || text.startsWith("[eqn]"))) {
                 text = processEmojiMath(text);
             }
-            SpannableStringBuilder spannable = new SpannableStringBuilder(text);
-            CommentParserHelper.detectLinks(theme, post, text, spannable);
-            return spannable;
+            return new SpannableStringBuilder(text);
         } else if (node instanceof Element) {
             StringBuilder nodeName = new StringBuilder(node.nodeName());
             String styleAttr = node.attr("style");
@@ -243,7 +237,7 @@ public class DefaultPostParser
 
     // Modified from 3.20 of Regular Expressions Cookbook, 2nd Edition
     // find that bad boy on LibGen, it's good stuff
-    private final Pattern MATH_PATTERN = Pattern.compile("\\[(math|eqn)].*?\\[/\1]");
+    private final Pattern MATH_PATTERN = Pattern.compile("\\[(math|eqn)].*?\\[/\\1]");
 
     private String processEmojiMath(String text) {
         StringBuilder rebuilder = new StringBuilder();

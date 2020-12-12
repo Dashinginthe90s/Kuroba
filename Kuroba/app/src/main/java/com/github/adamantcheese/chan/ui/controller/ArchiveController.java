@@ -26,22 +26,25 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.controller.Controller;
-import com.github.adamantcheese.chan.core.model.InternalSiteArchive;
+import com.github.adamantcheese.chan.core.model.InternalSiteArchive.ArchiveItem;
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.presenter.ArchivePresenter;
 import com.github.adamantcheese.chan.ui.helper.BoardHelper;
 import com.github.adamantcheese.chan.ui.toolbar.ToolbarMenuItem;
 import com.github.adamantcheese.chan.ui.view.CrossfadeView;
-import com.github.adamantcheese.chan.ui.view.DividerItemDecoration;
 import com.github.adamantcheese.chan.ui.view.FastScrollerHelper;
+import com.github.adamantcheese.chan.utils.RecyclerUtils;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import static android.view.Gravity.CENTER_VERTICAL;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
-import static android.widget.LinearLayout.VERTICAL;
+import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
+import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
@@ -53,11 +56,11 @@ public class ArchiveController
     private View progress;
     private View errorView;
 
-    private ArchivePresenter presenter;
+    private final ArchivePresenter presenter;
 
     private ArchiveAdapter adapter;
 
-    private Board board;
+    private final Board board;
 
     public ArchiveController(Context context, Board board) {
         super(context);
@@ -75,7 +78,7 @@ public class ArchiveController
 
         // Navigation
         navigation.title = getString(R.string.archive_title, BoardHelper.getName(board));
-        navigation.buildMenu().withItem(R.drawable.ic_search_white_24dp, this::searchClicked).build();
+        navigation.buildMenu().withItem(R.drawable.ic_fluent_search_24_filled, this::searchClicked).build();
 
         // View binding
         swipeRefreshLayout = view.findViewById(R.id.swipe_refresh);
@@ -88,7 +91,7 @@ public class ArchiveController
 
         // View setup
         archiveRecyclerview.setAdapter(adapter);
-        archiveRecyclerview.addItemDecoration(new DividerItemDecoration(context, VERTICAL));
+        archiveRecyclerview.addItemDecoration(RecyclerUtils.getBottomDividerDecoration(context));
         FastScrollerHelper.create(archiveRecyclerview);
         swipeRefreshLayout.setOnRefreshListener(this);
 
@@ -111,12 +114,15 @@ public class ArchiveController
     }
 
     @Override
+    public void onNavItemSet() {}
+
+    @Override
     public void onRefresh() {
         presenter.onRefresh();
     }
 
     @Override
-    public void setArchiveItems(List<InternalSiteArchive.ArchiveItem> items) {
+    public void setArchiveItems(List<ArchiveItem> items) {
         adapter.setArchiveItems(items);
     }
 
@@ -142,13 +148,13 @@ public class ArchiveController
         navigationController.pushController(threadController);
     }
 
-    private void onItemClicked(InternalSiteArchive.ArchiveItem item) {
+    private void onItemClicked(ArchiveItem item) {
         presenter.onItemClicked(item);
     }
 
     private class ArchiveAdapter
             extends RecyclerView.Adapter<ArchiveHolder> {
-        private List<InternalSiteArchive.ArchiveItem> archiveItems = new ArrayList<>();
+        private List<ArchiveItem> archiveItems = new ArrayList<>();
 
         @Override
         public int getItemCount() {
@@ -157,18 +163,15 @@ public class ArchiveController
 
         @Override
         public ArchiveHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-            return new ArchiveHolder(inflate(parent.getContext(), R.layout.cell_archive, parent, false));
+            return new ArchiveHolder(parent.getContext());
         }
 
         @Override
         public void onBindViewHolder(ArchiveHolder holder, int position) {
-            InternalSiteArchive.ArchiveItem archiveItem = archiveItems.get(position);
-
-            holder.item = archiveItem;
-            holder.text.setText(archiveItem.description);
+            holder.setItem(archiveItems.get(position));
         }
 
-        public void setArchiveItems(List<InternalSiteArchive.ArchiveItem> archiveItems) {
+        public void setArchiveItems(List<ArchiveItem> archiveItems) {
             this.archiveItems = archiveItems;
             notifyDataSetChanged();
         }
@@ -176,15 +179,22 @@ public class ArchiveController
 
     private class ArchiveHolder
             extends RecyclerView.ViewHolder {
-        private TextView text;
-        private InternalSiteArchive.ArchiveItem item;
+        private ArchiveItem item;
 
-        public ArchiveHolder(View itemView) {
-            super(itemView);
+        public ArchiveHolder(Context context) {
+            super(new TextView(context));
+            TextView view = (TextView) itemView;
+            view.setLayoutParams(new ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+            view.setMinimumHeight(dp(context, 48));
+            view.setGravity(CENTER_VERTICAL);
+            view.setPadding(dp(context, 8), dp(context, 8), dp(context, 8), dp(context, 8));
+            view.setTextSize(14);
+            view.setOnClickListener(v -> onItemClicked(item));
+        }
 
-            itemView.setOnClickListener(v -> onItemClicked(item));
-
-            text = itemView.findViewById(R.id.text);
+        public void setItem(ArchiveItem item) {
+            this.item = item;
+            ((TextView) itemView).setText(item.description);
         }
     }
 }

@@ -18,7 +18,6 @@ package com.github.adamantcheese.chan.ui.layout;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
-import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Rect;
@@ -37,12 +36,10 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.github.adamantcheese.chan.R;
-import com.github.adamantcheese.chan.core.manager.WatchManager;
 import com.github.adamantcheese.chan.core.model.ChanThread;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
-import com.github.adamantcheese.chan.core.model.orm.Pin;
 import com.github.adamantcheese.chan.core.presenter.ReplyPresenter;
 import com.github.adamantcheese.chan.core.repository.BitmapRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
@@ -63,12 +60,10 @@ import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.adamantcheese.chan.utils.RecyclerUtils;
 
-import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.TimeZone;
 
-import static com.github.adamantcheese.chan.Chan.instance;
 import static com.github.adamantcheese.chan.core.settings.ChanSettings.PostViewMode.CARD;
 import static com.github.adamantcheese.chan.core.settings.ChanSettings.PostViewMode.LIST;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
@@ -101,9 +96,8 @@ public class ThreadListLayout
     private ChanSettings.PostViewMode postViewMode;
     private int spanCount = 2;
     private boolean searchOpen;
-    private int lastPostCount;
 
-    private RecyclerView.OnScrollListener scrollListener = new RecyclerView.OnScrollListener() {
+    private final RecyclerView.OnScrollListener scrollListener = new RecyclerView.OnScrollListener() {
         @Override
         public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
             if (showingThread != null) {
@@ -112,10 +106,7 @@ public class ThreadListLayout
                 showingThread.getLoadable().listViewIndex = indexTop[0];
                 showingThread.getLoadable().listViewTop = indexTop[1];
 
-                int last = getCompleteBottomAdapterPosition();
-                if (last == postAdapter.getItemCount() - 1 && last > lastPostCount) {
-                    lastPostCount = last;
-
+                if (getCompleteBottomAdapterPosition() == postAdapter.getItemCount() - 1) {
                     // As requested by the RecyclerView, make sure that the adapter isn't changed
                     // while in a layout pass. Postpone to the next frame.
                     BackgroundUtils.runOnMainThread(() -> ThreadListLayout.this.callback.onListScrolledToBottom());
@@ -172,7 +163,6 @@ public class ThreadListLayout
         );
         recyclerView.setAdapter(postAdapter);
         recyclerView.addOnScrollListener(scrollListener);
-        recyclerView.setItemViewCacheSize(4);
 
         setFastScroll(false);
 
@@ -260,7 +250,7 @@ public class ThreadListLayout
         }
     }
 
-    public void showPosts(ChanThread thread, PostsFilter filter, boolean initial, boolean hardRefresh) {
+    public void showPosts(ChanThread thread, PostsFilter filter, boolean initial) {
         showingThread = thread;
         if (initial) {
             reply.getPresenter().bindLoadable(thread.getLoadable());
@@ -287,39 +277,7 @@ public class ThreadListLayout
 
         setFastScroll(true);
 
-        /*
-         * We call a blocking function that accesses the database from a background thread but doesn't
-         * throw an exception here. Why, you would ask? Because we can't use callbacks here, otherwise
-         * everything in ThreadPresenter.onChanLoaderData() below showPosts will be executed BEFORE
-         * filtered posts are shown in the RecyclerView. This will break scrolling to the last seen
-         * post as well as introduce some visual posts jiggling. This can be fixed by executing everything
-         * in ThreadPresenter.onChanLoaderData() below showPosts in a callback that is called after
-         * posts are assigned to the adapter. But that's a lot of code and it may break something else.
-         *
-         * This solution works but it will hang the main thread for some time (it shouldn't be for very
-         * long since we have like 300-500 posts in a thread to filter in the database).
-         * BUT if for some reason it starts to cause ANRs then we will have to apply the callback solution.
-         */
-        List<Post> filteredPosts =
-                filter.apply(thread.getPosts(), thread.getLoadable().siteId, thread.getLoadable().boardCode);
-
-        //Filter out any bookmarked threads from the catalog
-        if (ChanSettings.removeWatchedFromCatalog.get() && thread.getLoadable().isCatalogMode()) {
-            List<Post> toRemove = new ArrayList<>();
-            WatchManager watchManager = instance(WatchManager.class);
-            synchronized (watchManager.getAllPins()) {
-                for (Pin pin : watchManager.getAllPins()) {
-                    for (Post post : filteredPosts) {
-                        if (pin.loadable.equals(Loadable.forThread(thread.getLoadable().board, post.no, "", false))) {
-                            toRemove.add(post);
-                        }
-                    }
-                }
-            }
-            filteredPosts.removeAll(toRemove);
-        }
-
-        postAdapter.setThread(thread.getLoadable(), filteredPosts, filter.getQuery(), hardRefresh);
+        postAdapter.setThread(thread, filter);
     }
 
     public boolean onBack() {
@@ -443,8 +401,6 @@ public class ThreadListLayout
         }
     }
 
-    @SuppressLint("StringFormatMatches")
-    //android studio doesn't like the nested getQuantityString and messes up, but nothing is wrong
     public void setSearchStatus(String query, boolean setEmptyText, boolean hideKeyboard) {
         if (hideKeyboard) {
             hideKeyboard(this);
@@ -473,7 +429,8 @@ public class ThreadListLayout
             if (searchOpen) {
                 int searchExtraHeight = findViewById(R.id.search_status).getHeight();
                 if (postViewMode == LIST) {
-                    return top.getTop() != searchExtraHeight;
+                    //dp(1) for divider item decor
+                    return top.getTop() - dp(1) != searchExtraHeight;
                 } else {
                     if (top instanceof PostStubCell) {
                         // PostStubCell does not have grid_card_margin
@@ -487,7 +444,8 @@ public class ThreadListLayout
 
             switch (postViewMode) {
                 case LIST:
-                    return top.getTop() != toolbarHeight();
+                    //dp(1) for divider item decor
+                    return top.getTop() - dp(1) != toolbarHeight();
                 case CARD:
                     if (top instanceof PostStubCell) {
                         // PostStubCell does not have grid_card_margin
@@ -508,9 +466,9 @@ public class ThreadListLayout
     public void smoothScrollNewPosts(int displayPosition) {
         if (recyclerView.getLayoutManager() instanceof LinearLayoutManager) {
             ((LinearLayoutManager) recyclerView.getLayoutManager()).scrollToPositionWithOffset(
+                    //position + 1 to fully render the post after last viewed post (actually scrolls to top of post after post after last viewed)
                     displayPosition + 1,
-                    //position + 1 for last seen view, dp(4) for it's height
-                    recyclerView.getHeight() - recyclerView.getPaddingTop() - dp(4)
+                    recyclerView.getHeight() - recyclerView.getPaddingTop()
             );
         } else {
             Logger.wtf(this, "Layout manager is grid inside thread??");
@@ -525,7 +483,6 @@ public class ThreadListLayout
             openSearch(false);
         }
         showingThread = null;
-        lastPostCount = 0;
         noParty();
         noSanta();
     }
@@ -573,17 +530,15 @@ public class ThreadListLayout
                 });
             }
         } else {
-            int scrollPosition = postAdapter.getScrollPosition(displayPosition);
-
-            int difference = Math.abs(scrollPosition - getTopAdapterPosition());
+            int difference = Math.abs(displayPosition - getTopAdapterPosition());
             if (difference > MAX_SMOOTH_SCROLL_DISTANCE) {
                 smooth = false;
             }
 
             if (smooth) {
-                recyclerView.smoothScrollToPosition(scrollPosition);
+                recyclerView.smoothScrollToPosition(displayPosition);
             } else {
-                recyclerView.scrollToPosition(scrollPosition);
+                recyclerView.scrollToPosition(displayPosition);
                 // No animation means no animation, wait for the layout to finish and skip all animations
                 final RecyclerView.ItemAnimator itemAnimator = recyclerView.getItemAnimator();
                 waitForLayout(recyclerView, view -> {
@@ -594,20 +549,12 @@ public class ThreadListLayout
         }
     }
 
-    public void highlightPost(Post post) {
-        postAdapter.highlightPost(post);
-    }
-
     public void highlightPostId(String id) {
         postAdapter.highlightPostId(id);
     }
 
     public void highlightPostTripcode(String tripcode) {
         postAdapter.highlightPostTripcode(tripcode);
-    }
-
-    public void selectPost(int post) {
-        postAdapter.selectPost(post);
     }
 
     @Override
@@ -857,6 +804,10 @@ public class ThreadListLayout
 
     public void onImageOptionsComplete() {
         reply.onImageOptionsComplete();
+    }
+
+    public boolean isReplyLayoutOpen() {
+        return replyOpen;
     }
 
     public interface ThreadListLayoutPresenterCallback {

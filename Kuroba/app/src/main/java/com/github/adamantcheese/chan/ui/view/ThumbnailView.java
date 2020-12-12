@@ -16,8 +16,8 @@
  */
 package com.github.adamantcheese.chan.ui.view;
 
-import android.animation.ObjectAnimator;
-import android.animation.ValueAnimator;
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
@@ -61,23 +61,21 @@ public abstract class ThumbnailView
 
     private boolean calculate;
     private Bitmap bitmap;
-    private RectF bitmapRect = new RectF();
-    private RectF drawRect = new RectF();
-    private RectF outputRect = new RectF();
+    private final RectF bitmapRect = new RectF();
+    private final RectF drawRect = new RectF();
+    private final RectF outputRect = new RectF();
 
-    private Matrix matrix = new Matrix();
+    private final Matrix matrix = new Matrix();
     BitmapShader bitmapShader;
-    private Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
     private boolean foregroundCalculate = false;
     private Drawable foreground;
 
     protected boolean error = false;
     private String errorText;
-    private Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private Rect tmpTextRect = new Rect();
-
-    private ValueAnimator fadeIn;
+    private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Rect tmpTextRect = new Rect();
 
     private HttpUrl source = null;
 
@@ -108,10 +106,6 @@ public abstract class ThumbnailView
     public void setUrl(HttpUrl url, int maxWidth, int maxHeight) {
         error = false;
         setImageBitmap(null);
-        if (fadeIn != null) {
-            fadeIn.end();
-            fadeIn = null;
-        }
 
         if (bitmapCall != null) {
             bitmapCall.cancel();
@@ -119,16 +113,7 @@ public abstract class ThumbnailView
         }
 
         source = url;
-
-        if (url == null) {
-            return;
-        }
-
-        bitmapCall = NetUtils.makeBitmapRequest(url, this, maxWidth, maxHeight);
-    }
-
-    public void setUrl(HttpUrl url) {
-        setUrl(url, 0, 0);
+        bitmapCall = NetUtils.makeBitmapRequest(source, this, maxWidth, maxHeight);
     }
 
     public void setCircular(boolean circular) {
@@ -302,17 +287,21 @@ public abstract class ThumbnailView
     }
 
     private void onImageSet(boolean isImmediate) {
-        clearAnimation();
-        if (!isImmediate) {
-            setAlpha(0f);
-            fadeIn = ObjectAnimator.ofFloat(this, View.ALPHA, 0f, 1f).setDuration(200);
-            fadeIn.start();
-        } else {
-            if (fadeIn != null) {
-                fadeIn.cancel();
-                fadeIn = null;
-            }
+        if (isImmediate) {
             setAlpha(1f);
+            onSetAlpha(255);
+            animate().cancel();
+        } else {
+            setAlpha(0f);
+            onSetAlpha(0);
+            animate().alpha(1f).setDuration(200).setListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    super.onAnimationEnd(animation);
+                    setAlpha(1f);
+                    onSetAlpha(255);
+                }
+            });
         }
     }
 
@@ -329,7 +318,8 @@ public abstract class ThumbnailView
     }
 
     @Override
-    public void onBitmapFailure(Exception e) {
+    public void onBitmapFailure(HttpUrl source, Exception e) {
+        if (this.source == null || !this.source.equals(source)) return; // source changed while call occurred, ignore
         if (e instanceof NetUtilsClasses.HttpCodeException) {
             errorText = String.valueOf(((NetUtilsClasses.HttpCodeException) e).code);
         } else {
@@ -343,7 +333,8 @@ public abstract class ThumbnailView
     }
 
     @Override
-    public void onBitmapSuccess(@NonNull Bitmap bitmap, boolean fromCache) {
+    public void onBitmapSuccess(HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
+        if (this.source == null || !this.source.equals(source)) return; // source changed while call occurred, ignore
         setImageBitmap(bitmap);
         onImageSet(fromCache);
         bitmapCall = null;

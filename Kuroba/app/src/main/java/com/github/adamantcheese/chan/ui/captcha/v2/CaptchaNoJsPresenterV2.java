@@ -69,8 +69,8 @@ public class CaptchaNoJsPresenterV2 {
     @Nullable
     private CaptchaInfo prevCaptchaInfo = null;
 
-    private AtomicBoolean verificationInProgress = new AtomicBoolean(false);
-    private AtomicBoolean captchaRequestInProgress = new AtomicBoolean(false);
+    private final AtomicBoolean verificationInProgress = new AtomicBoolean(false);
+    private final AtomicBoolean captchaRequestInProgress = new AtomicBoolean(false);
     private String siteKey;
     private String baseUrl;
     private long lastTimeCaptchaRequest = 0L;
@@ -110,7 +110,7 @@ public class CaptchaNoJsPresenterV2 {
                 throw new CaptchaNoJsV2Error("C parameter is null");
             }
 
-            BackgroundUtils.backgroundService.submit(() -> {
+            BackgroundUtils.runOnBackgroundThread(() -> {
                 try {
                     String recaptchaUrl = recaptchaUrlBase + siteKey;
                     RequestBody body = createResponseBody(prevCaptchaInfo, selectedIds);
@@ -170,7 +170,7 @@ public class CaptchaNoJsPresenterV2 {
 
             lastTimeCaptchaRequest = System.currentTimeMillis();
 
-            BackgroundUtils.backgroundService.submit(() -> {
+            BackgroundUtils.runOnBackgroundThread(() -> {
                 try {
                     try {
                         prevCaptchaInfo = getCaptchaInfo();

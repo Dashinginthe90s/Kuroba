@@ -37,7 +37,7 @@ public class FilesAdapter
 
     private FileWatcher.FileItem highlightedItem;
     private FileWatcher.FileItems fileItems;
-    private Callback callback;
+    private final Callback callback;
 
     public FilesAdapter(Callback callback) {
         this.callback = callback;
@@ -113,22 +113,15 @@ public class FilesAdapter
     }
 
     public class FileViewHolder
-            extends RecyclerView.ViewHolder
-            implements View.OnClickListener {
-        private ImageView image;
-        private TextView text;
+            extends RecyclerView.ViewHolder {
+        private final ImageView image;
+        private final TextView text;
 
         public FileViewHolder(View itemView) {
             super(itemView);
             image = itemView.findViewById(R.id.image);
             text = itemView.findViewById(R.id.text);
-            itemView.setOnClickListener(this);
-        }
-
-        @Override
-        public void onClick(View v) {
-            FileWatcher.FileItem item = getItem(getAdapterPosition());
-            onItemClicked(item);
+            itemView.setOnClickListener(v -> onItemClicked(getItem(getAdapterPosition())));
         }
     }
 

@@ -105,17 +105,15 @@ public class NavigationItem {
         }
 
         public MenuOverflowBuilder withOverflow() {
-            return new MenuOverflowBuilder(this,
-                    new ToolbarMenuItem(ToolbarMenu.OVERFLOW_ID,
-                            R.drawable.ic_more_vert_white_24dp,
-                            ToolbarMenuItem::showSubmenu
-                    )
-            );
+            return new MenuOverflowBuilder(this, new ToolbarMenuItem(ToolbarMenu.OVERFLOW_ID,
+                    R.drawable.ic_fluent_more_vertical_24_filled,
+                    ToolbarMenuItem::showSubmenu
+            ));
         }
 
         public MenuOverflowBuilder withOverflow(ToolbarMenuItem.OverflowMenuCallback threedotMenuCallback) {
             return new MenuOverflowBuilder(this, new ToolbarMenuItem(ToolbarMenu.OVERFLOW_ID,
-                    R.drawable.ic_more_vert_white_24dp,
+                    R.drawable.ic_fluent_more_vertical_24_filled,
                     ToolbarMenuItem::showSubmenu,
                     threedotMenuCallback
             ));

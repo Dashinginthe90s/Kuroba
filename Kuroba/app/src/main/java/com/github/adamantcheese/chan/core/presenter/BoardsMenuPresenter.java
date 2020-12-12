@@ -38,7 +38,7 @@ import static com.github.adamantcheese.chan.core.presenter.BoardsMenuPresenter.I
 
 public class BoardsMenuPresenter
         implements Observer {
-    private BoardRepository.SitesBoards allBoards;
+    private final BoardRepository.SitesBoards allBoards;
 
     private Items items;
 
@@ -104,7 +104,7 @@ public class BoardsMenuPresenter
 
                 items.add(new Item(itemIdCounter++, site));
 
-                if (filter == null || filter.length() == 0) {
+                if (filter == null || filter.isEmpty()) {
                     for (Board board : boards) {
                         if (board.saved) {
                             items.add(new Item(itemIdCounter++, board));
@@ -149,15 +149,9 @@ public class BoardsMenuPresenter
 
     public static class Item {
         public enum Type {
-            BOARD(0),
-            SITE(1),
-            SEARCH(2);
-
-            public int typeId;
-
-            Type(int typeId) {
-                this.typeId = typeId;
-            }
+            BOARD,
+            SITE,
+            SEARCH
         }
 
         public final Type type;

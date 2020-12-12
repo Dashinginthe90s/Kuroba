@@ -7,7 +7,6 @@ import com.github.adamantcheese.chan.core.model.Post;
 
 import java.text.CharacterIterator;
 import java.text.StringCharacterIterator;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -56,14 +55,7 @@ public class PostUtils {
         for (Post post : posts) {
             if (post.no == id && !postsSet.contains(post)) {
                 postsSet.add(post);
-
-                List<Integer> repliesFrom;
-
-                synchronized (post.repliesFrom) {
-                    repliesFrom = new ArrayList<>(post.repliesFrom);
-                }
-
-                for (Integer replyId : repliesFrom) {
+                for (Integer replyId : post.repliesFrom) {
                     findPostWithRepliesRecursive(replyId, posts, postsSet);
                 }
             }
