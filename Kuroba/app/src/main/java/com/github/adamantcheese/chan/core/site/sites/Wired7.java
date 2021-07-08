@@ -16,8 +16,6 @@
  */
 package com.github.adamantcheese.chan.core.site.sites;
 
-import androidx.annotation.NonNull;
-
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.site.SiteIcon;
@@ -83,7 +81,8 @@ public class Wired7
 
     @Override
     public void setup() {
-        setBoards(Board.fromSiteNameCode(this, "Random", "b"),
+        setBoards(
+                Board.fromSiteNameCode(this, "Random", "b"),
                 Board.fromSiteNameCode(this, "Hentai", "h"),
                 Board.fromSiteNameCode(this, "Humanidad", "hum"),
                 Board.fromSiteNameCode(this, "Internacional/Random", "i"),
@@ -121,7 +120,7 @@ public class Wired7
         }
 
         @Override
-        public void setupPost(Loadable loadable, MultipartHttpCall call) {
+        public void setupPost(Loadable loadable, MultipartHttpCall<ReplyResponse> call) {
             Reply reply = loadable.draft;
             call.parameter("board", loadable.boardCode);
 
@@ -152,12 +151,17 @@ public class Wired7
         }
 
         @Override
-        public void handlePost(ReplyResponse replyResponse, Response response, String result) {
-            Matcher auth = Pattern.compile("\"captcha\": ?true").matcher(result);
-            Matcher err = errorPattern().matcher(result);
+        public ReplyResponse handlePost(Loadable loadable, Response response) {
+            ReplyResponse replyResponse = new ReplyResponse(loadable);
+            String responseString = "";
+            try {
+                responseString = response.body().string();
+            } catch (Exception ignored) {}
+            Matcher auth = Pattern.compile("\"captcha\": ?true").matcher(responseString);
+            Matcher err = errorPattern().matcher(responseString);
             if (auth.find()) {
                 replyResponse.requireAuthentication = true;
-                replyResponse.errorMessage = result;
+                replyResponse.errorMessage = responseString;
             } else if (err.find()) {
                 replyResponse.errorMessage = Jsoup.parse(err.group(1)).body().text();
             } else {
@@ -181,15 +185,7 @@ public class Wired7
                     replyResponse.errorMessage = "Error posting: could not find posted thread.";
                 }
             }
+            return replyResponse;
         }
-    }
-
-    @NonNull
-    @Override
-    public ChunkDownloaderSiteProperties getChunkDownloaderSiteProperties() {
-        return new ChunkDownloaderSiteProperties(Integer.MAX_VALUE, true,
-                // Wired-7 sends incorrect file md5 hash sometimes
-                false
-        );
     }
 }

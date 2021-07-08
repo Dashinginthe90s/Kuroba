@@ -18,9 +18,9 @@ package com.github.adamantcheese.chan.ui.layout;
 
 import android.content.Context;
 import android.util.AttributeSet;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.LinearLayout;
@@ -33,7 +33,6 @@ import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.presenter.BoardSetupPresenter;
 import com.github.adamantcheese.chan.core.presenter.BoardSetupPresenter.BoardSuggestion;
-import com.github.adamantcheese.chan.utils.LayoutUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -64,7 +63,6 @@ public class BoardAddLayout
         // View binding
         SearchLayout search = findViewById(R.id.search);
         RecyclerView suggestionsRecycler = findViewById(R.id.suggestions);
-        Button checkAllButton = findViewById(R.id.select_all);
 
         // Adapters
         suggestionsAdapter = new SuggestionsAdapter();
@@ -72,7 +70,6 @@ public class BoardAddLayout
         // View setup
         search.setCallback(this);
 
-        checkAllButton.setOnClickListener(v -> suggestionsAdapter.selectAll());
         suggestionsRecycler.setAdapter(suggestionsAdapter);
 
         suggestionsRecycler.requestFocus();
@@ -98,9 +95,6 @@ public class BoardAddLayout
     public void onSearchEntered(String entered) {
         presenter.searchEntered(entered);
     }
-
-    @Override
-    public void onClearPressedWhenEmpty() {}
 
     @Override
     public void suggestionsWereChanged(List<BoardSuggestion> suggestionList) {
@@ -135,13 +129,6 @@ public class BoardAddLayout
             notifyDataSetChanged();
         }
 
-        public void selectAll() {
-            for (BoardSuggestion suggestion : suggestionList) {
-                suggestion.checked = true;
-            }
-            notifyDataSetChanged();
-        }
-
         public List<String> getSelectedSuggestions() {
             List<String> result = new ArrayList<>();
             for (BoardSuggestion suggestion : suggestionList) {
@@ -167,11 +154,8 @@ public class BoardAddLayout
         @Override
         @NonNull
         public SuggestionCell onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            return new SuggestionCell(LayoutUtils.inflate(parent.getContext(),
-                    R.layout.cell_board_suggestion,
-                    parent,
-                    false
-            ));
+            return new SuggestionCell(LayoutInflater.from(parent.getContext())
+                    .inflate(R.layout.cell_board_suggestion, parent, false));
         }
 
         @Override

@@ -32,12 +32,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <item name="snackbarButtonStyle">@style/SnackbarButtonStyle</item>
         <item name="colorSurface">@color/white</item>
         <item name="textAppearanceBody2">@style/TextAppearance.MaterialComponents.Body2</item>
-        <item name="alertDialogTheme">@style/AlertDialogTheme</item>
         <item name="android:listPopupWindowStyle">@style/ListPopupWindowStyle</item>
 
         <item name="colorControlNormal">@color/textColorSecondary</item>
         <item name="themeDrawableColor">@color/md_grey_600</item>
-        <item name="highlight_color">#20000000</item>
+        <item name="themeDrawableDimmedColor">@color/md_grey_750</item>
+        <item name="highlight_color">#1C000000</item>
         <item name="divider_color">#20000000</item>
         <item name="setting_description_top">@drawable/setting_description_top</item>
         <item name="setting_description_bottom">@drawable/setting_description_bottom</item>
@@ -58,11 +58,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <item name="snackbarButtonStyle">@style/SnackbarButtonStyle</item>
         <item name="colorSurface">@color/white</item>
         <item name="textAppearanceBody2">@style/TextAppearance.MaterialComponents.Body2</item>
-        <item name="alertDialogTheme">@style/AlertDialogTheme</item>
         <item name="android:listPopupWindowStyle">@style/ListPopupWindowStyle</item>
 
         <item name="colorControlNormal">@color/textColorSecondary</item>
         <item name="themeDrawableColor">@color/white</item>
+        <item name="themeDrawableDimmedColor">@color/md_grey_575</item>
         <item name="highlight_color">#1CFFFFFF</item>
         <item name="divider_color">#28FFFFFF</item>
         <item name="setting_description_top">@drawable/setting_description_top_dark</item>
@@ -659,12 +659,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         <attr name="layout_ratio" format="float" />
     </declare-styleable>
 
-    <declare-styleable name="FixedRatioThumbnailView">
-        <attr name="ratio" format="float" />
+    <declare-styleable name="ThumbnailView">
+        <attr name="circular" format="boolean" />
     </declare-styleable>
 
-    <declare-styleable name="PostImageThumbnailView">
-        <attr name="decode_dimen" format="dimension" />
+    <declare-styleable name="FixedRatioThumbnailView">
+        <attr name="ratio" format="float" />
     </declare-styleable>
     <!-- endregion -->
 

@@ -19,6 +19,7 @@ package com.github.adamantcheese.chan.ui.controller;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.text.TextUtils;
+import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -37,15 +38,16 @@ import com.github.adamantcheese.chan.core.manager.FilterEngine;
 import com.github.adamantcheese.chan.core.manager.FilterEngine.FilterAction;
 import com.github.adamantcheese.chan.core.manager.FilterType;
 import com.github.adamantcheese.chan.core.model.orm.Filter;
+import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.helper.RefreshUIMessage;
 import com.github.adamantcheese.chan.ui.layout.FilterLayout;
-import com.github.adamantcheese.chan.ui.toolbar.ToolbarMenuItem;
+import com.github.adamantcheese.chan.ui.widget.CancellableSnackbar;
 import com.github.adamantcheese.chan.utils.AndroidUtils;
 import com.github.adamantcheese.chan.utils.RecyclerUtils;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
-import com.skydoves.balloon.ArrowConstraints;
 import com.skydoves.balloon.ArrowOrientation;
+import com.skydoves.balloon.ArrowPositionRules;
 import com.skydoves.balloon.Balloon;
 
 import java.util.ArrayList;
@@ -57,15 +59,23 @@ import javax.inject.Inject;
 
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
+import static com.github.adamantcheese.chan.ui.controller.FiltersController.MenuId.DEBUG;
+import static com.github.adamantcheese.chan.ui.controller.FiltersController.MenuId.SEARCH;
 import static com.github.adamantcheese.chan.ui.helper.RefreshUIMessage.Reason.FILTERS_CHANGED;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
+import static com.github.adamantcheese.chan.ui.widget.DefaultAlertDialog.getDefaultAlertBuilder;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.postToEventBus;
-import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class FiltersController
         extends Controller
         implements ToolbarNavigationController.ToolbarSearchCallback, View.OnClickListener {
+    enum MenuId {
+        SEARCH,
+        DEBUG
+    }
+
     @Inject
     DatabaseFilterManager databaseFilterManager;
 
@@ -119,11 +129,29 @@ public class FiltersController
     public void onCreate() {
         super.onCreate();
 
-        view = inflate(context, R.layout.controller_filters);
+        view = (ViewGroup) LayoutInflater.from(context).inflate(R.layout.controller_filters, null);
 
         navigation.setTitle(R.string.filters_screen);
         navigation.swipeable = false;
-        navigation.buildMenu().withItem(R.drawable.ic_fluent_search_24_filled, this::searchClicked).build();
+        navigation.buildMenu().withItem(SEARCH,
+                R.drawable.ic_fluent_search_24_filled,
+                (item) -> ((ToolbarNavigationController) navigationController).showSearch()
+        ).withItem(DEBUG,
+                ChanSettings.debugFilters.get()
+                        ? R.drawable.ic_fluent_highlight_24_filled
+                        : R.drawable.ic_fluent_highlight_24_regular,
+                (item) -> {
+                    ChanSettings.debugFilters.toggle();
+                    item.setImage(ChanSettings.debugFilters.get()
+                            ? R.drawable.ic_fluent_highlight_24_filled
+                            : R.drawable.ic_fluent_highlight_24_regular);
+                    showToast(context,
+                            "Filter debugging turned " + (ChanSettings.debugFilters.get()
+                                    ? "on; tap highlighted text to see matched filter."
+                                    : "off.")
+                    );
+                }
+        ).build();
 
         adapter = new FilterAdapter();
 
@@ -143,22 +171,28 @@ public class FiltersController
     }
 
     @Override
-    public void onShow() {
-        super.onShow();
-
+    public void onNavItemSet() {
+        if (navigation.search) return; // bit of a hack to ignore the search change
         Balloon addHint = AndroidUtils.getBaseToolTip(context)
-                .setArrowConstraints(ArrowConstraints.ALIGN_ANCHOR)
+                .setArrowPositionRules(ArrowPositionRules.ALIGN_ANCHOR)
                 .setPreferenceName("AddFilter")
                 .setArrowOrientation(ArrowOrientation.BOTTOM)
                 .setTextResource(R.string.filter_add_hint)
                 .build();
         Balloon toggleHint = AndroidUtils.getBaseToolTip(context)
-                .setArrowConstraints(ArrowConstraints.ALIGN_ANCHOR)
+                .setArrowPositionRules(ArrowPositionRules.ALIGN_ANCHOR)
                 .setPreferenceName("ToggleFilter")
                 .setArrowOrientation(ArrowOrientation.BOTTOM)
                 .setTextResource(R.string.filter_toggle_hint)
                 .build();
-        addHint.relayShowAlignTop(toggleHint, enable);
+        Balloon debugHint = AndroidUtils.getBaseToolTip(context)
+                .setArrowPositionRules(ArrowPositionRules.ALIGN_ANCHOR)
+                .setPreferenceName("DebugFilter")
+                .setArrowOrientation(ArrowOrientation.TOP)
+                .setTextResource(R.string.filter_debug_hint)
+                .build();
+        addHint.relayShowAlignTop(toggleHint, enable)
+                .relayShowAlignBottom(debugHint, navigation.findItem(DEBUG).getView());
         addHint.showAlignTop(add);
     }
 
@@ -205,16 +239,12 @@ public class FiltersController
         adapter.reload();
     }
 
-    private void searchClicked(ToolbarMenuItem item) {
-        ((ToolbarNavigationController) navigationController).showSearch();
-    }
-
     public void showFilterDialog(final Filter filter) {
-        final View filterLayout = inflate(context, R.layout.layout_filter, null);
+        final View filterLayout = LayoutInflater.from(context).inflate(R.layout.layout_filter, null);
         final FilterLayout layout = filterLayout.findViewById(R.id.filter_layout);
 
         final AlertDialog alertDialog =
-                new AlertDialog.Builder(context).setView(filterLayout).setPositiveButton("Save", (dialog, which) -> {
+                getDefaultAlertBuilder(context).setView(filterLayout).setPositiveButton("Save", (dialog, which) -> {
                     filterEngine.createOrUpdateFilter(layout.getFilter());
                     if (filterEngine.getEnabledFilters().isEmpty()) {
                         enable.setImageResource(R.drawable.ic_fluent_checkmark_24_filled);
@@ -235,13 +265,14 @@ public class FiltersController
         postToEventBus(new RefreshUIMessage(FILTERS_CHANGED));
         adapter.reload();
 
-        Snackbar s = Snackbar.make(view, getString(R.string.filter_removed_undo, clone.pattern), Snackbar.LENGTH_LONG);
-        s.setAction(R.string.undo, v -> {
-            filterEngine.createOrUpdateFilter(clone);
-            adapter.reload();
-        });
-        s.setGestureInsetBottomIgnored(true);
-        s.show();
+        CancellableSnackbar.showSnackbar(view,
+                getString(R.string.filter_removed_undo, clone.pattern),
+                R.string.undo,
+                v -> {
+                    filterEngine.createOrUpdateFilter(clone);
+                    adapter.reload();
+                }
+        );
     }
 
     @Override
@@ -269,9 +300,6 @@ public class FiltersController
         adapter.filter();
     }
 
-    @Override
-    public void onNavItemSet() {}
-
     private class FilterAdapter
             extends RecyclerView.Adapter<FilterHolder> {
         private List<Filter> sourceList = new ArrayList<>();
@@ -286,7 +314,8 @@ public class FiltersController
 
         @Override
         public FilterHolder onCreateViewHolder(ViewGroup parent, int viewType) {
-            return new FilterHolder(inflate(parent.getContext(), R.layout.cell_filter, parent, false));
+            return new FilterHolder(LayoutInflater.from(parent.getContext())
+                    .inflate(R.layout.cell_filter, parent, false));
         }
 
         @Override

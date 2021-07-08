@@ -2,10 +2,14 @@ package com.github.adamantcheese.chan.core.site.common.taimaba;
 
 import android.util.JsonReader;
 
+import androidx.core.util.Pair;
+
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostHttpIcon;
 import com.github.adamantcheese.chan.core.model.PostImage;
+import com.github.adamantcheese.chan.core.net.NetUtilsClasses.PassthroughBitmapResult;
 import com.github.adamantcheese.chan.core.site.SiteEndpoints;
+import com.github.adamantcheese.chan.core.site.SiteEndpoints.ICON_TYPE;
 import com.github.adamantcheese.chan.core.site.common.CommonSite;
 import com.github.adamantcheese.chan.core.site.parser.ChanReaderProcessingQueue;
 
@@ -80,9 +84,9 @@ public class TaimabaApi
     public void readPostObject(JsonReader reader, ChanReaderProcessingQueue queue)
             throws Exception {
         Post.Builder builder = new Post.Builder();
-        builder.board(queue.getLoadable().board);
+        builder.board(queue.loadable.board);
 
-        SiteEndpoints endpoints = queue.getLoadable().site.endpoints();
+        SiteEndpoints endpoints = queue.loadable.site.endpoints();
 
         // File
         String fileExt = null;
@@ -105,8 +109,7 @@ public class TaimabaApi
 
         // Country flag
         String countryCode = null;
-        String trollCountryCode = null;
-        String countryName = null;
+        String countryDescription = null;
 
         reader.beginObject();
         while (reader.hasNext()) {
@@ -179,11 +182,8 @@ public class TaimabaApi
                 case "country":
                     countryCode = reader.nextString();
                     break;
-                case "troll_country":
-                    trollCountryCode = reader.nextString();
-                    break;
                 case "country_name":
-                    countryName = reader.nextString();
+                    countryDescription = reader.nextString();
                     break;
                 case "spoiler":
                     fileSpoiler = reader.nextInt() == 1;
@@ -247,15 +247,7 @@ public class TaimabaApi
 
         if (builder.op) {
             // Update OP fields later on the main thread
-            Post.Builder op = new Post.Builder();
-            op.closed(builder.closed);
-            op.archived(builder.archived);
-            op.sticky(builder.sticky);
-            op.replies(builder.replies);
-            op.images(builder.imagesCount);
-            op.uniqueIps(builder.uniqueIps);
-            op.lastModified(builder.lastModified);
-            queue.setOp(op);
+            queue.setOp(builder.clone());
         }
 
         Post cached = queue.getCachedPost(builder.no);
@@ -265,14 +257,15 @@ public class TaimabaApi
             return;
         }
 
-        if (countryCode != null && countryName != null) {
-            HttpUrl countryUrl = endpoints.icon("country", makeArgument("country_code", countryCode));
-            builder.addHttpIcon(new PostHttpIcon(countryUrl, countryName + "/" + countryCode));
-        }
-
-        if (trollCountryCode != null && countryName != null) {
-            HttpUrl countryUrl = endpoints.icon("troll_country", makeArgument("troll_country_code", trollCountryCode));
-            builder.addHttpIcon(new PostHttpIcon(countryUrl, countryName + "/t_" + trollCountryCode));
+        if (countryCode != null && countryDescription != null) {
+            Pair<HttpUrl, PassthroughBitmapResult> resultPair =
+                    endpoints.icon(ICON_TYPE.COUNTRY_FLAG, makeArgument("country_code", countryCode));
+            builder.addHttpIcon(new PostHttpIcon(ICON_TYPE.COUNTRY_FLAG,
+                    resultPair.first,
+                    resultPair.second,
+                    countryCode,
+                    countryDescription
+            ));
         }
 
         queue.addForParse(builder);

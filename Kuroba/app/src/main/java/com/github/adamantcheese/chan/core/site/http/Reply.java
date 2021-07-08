@@ -47,15 +47,28 @@ public class Reply {
     public String password;
 
     public Reply() {
-        reset(false);
+        try {
+            reset(false);
+        } catch (Throwable e) {
+            // mostly for layout previewer related garbage, but also just in case
+            file = null;
+            fileName = "";
+            name = "";
+            options = "";
+            flag = "";
+            subject = "";
+            comment = "";
+            spoilerImage = false;
+            password = Long.toHexString(Default.nextLong());
+        }
     }
 
-    public void reset(boolean keepName) {
+    public void reset(boolean keepNameAndFlag) {
         file = null;
         fileName = "";
-        name = keepName ? name : ChanSettings.postDefaultName.get();
+        name = keepNameAndFlag ? name : ChanSettings.postDefaultName.get();
         options = "";
-        flag = "";
+        flag = keepNameAndFlag ? flag : "";
         subject = "";
         comment = "";
         spoilerImage = false;

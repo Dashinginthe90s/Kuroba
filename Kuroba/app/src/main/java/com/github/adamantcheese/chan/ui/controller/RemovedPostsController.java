@@ -2,6 +2,7 @@ package com.github.adamantcheese.chan.ui.controller;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
@@ -19,14 +20,14 @@ import androidx.constraintlayout.widget.ConstraintLayout;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostImage;
+import com.github.adamantcheese.chan.core.net.NetUtils;
+import com.github.adamantcheese.chan.core.net.NetUtilsClasses;
 import com.github.adamantcheese.chan.ui.helper.RemovedPostsHelper;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.Logger;
-import com.github.adamantcheese.chan.utils.NetUtils;
-import com.github.adamantcheese.chan.utils.NetUtilsClasses;
 
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
@@ -34,7 +35,6 @@ import okhttp3.HttpUrl;
 
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
-import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class RemovedPostsController
         extends BaseFloatingController
@@ -177,7 +177,8 @@ public class RemovedPostsController
             }
 
             if (convertView == null) {
-                convertView = inflate(getContext(), R.layout.layout_removed_post, parent, false);
+                convertView =
+                        LayoutInflater.from(parent.getContext()).inflate(R.layout.layout_removed_post, parent, false);
             }
 
             LinearLayout viewHolder = convertView.findViewById(R.id.removed_post_view_holder);
@@ -196,16 +197,16 @@ public class RemovedPostsController
                 postImage.setVisibility(VISIBLE);
                 NetUtils.makeBitmapRequest(image.getThumbnailUrl(), new NetUtilsClasses.BitmapResult() {
                     @Override
-                    public void onBitmapFailure(HttpUrl source, Exception e) {
+                    public void onBitmapFailure(@NonNull HttpUrl source, Exception e) {
                         Logger.e(RemovedPostAdapter.this, "Error while trying to download post image", e);
                         postImage.setVisibility(GONE);
                     }
 
                     @Override
-                    public void onBitmapSuccess(HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
+                    public void onBitmapSuccess(@NonNull HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
                         postImage.setImageBitmap(bitmap);
                     }
-                }, postImage.getWidth(), postImage.getHeight());
+                }, postImage.getLayoutParams().width, postImage.getLayoutParams().height);
             } else {
                 postImage.setVisibility(GONE);
             }
@@ -230,7 +231,7 @@ public class RemovedPostsController
 
         public void setRemovedPosts(RemovedPost[] removedPostsArray) {
             removedPostsCopy.clear();
-            removedPostsCopy.addAll(Arrays.asList(removedPostsArray));
+            Collections.addAll(removedPostsCopy, removedPostsArray);
 
             clear();
             addAll(removedPostsCopy);

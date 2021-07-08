@@ -26,7 +26,7 @@ import java.util.Map;
 
 public class ChanReaderProcessingQueue {
     private final Map<Integer, Post> cachedByNo = new HashMap<>();
-    private final Loadable loadable;
+    public final Loadable loadable;
 
     private final List<Post> toReuse = new ArrayList<>();
     private final List<Post.Builder> toParse = new ArrayList<>();
@@ -56,10 +56,6 @@ public class ChanReaderProcessingQueue {
         this.op = op;
     }
 
-    public Loadable getLoadable() {
-        return loadable;
-    }
-
     List<Post> getToReuse() {
         return toReuse;
     }
@@ -68,7 +64,7 @@ public class ChanReaderProcessingQueue {
         return toParse;
     }
 
-    Post.Builder getOp() {
+    public Post.Builder getOp() {
         return op;
     }
 }

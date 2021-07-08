@@ -19,8 +19,7 @@ package com.github.adamantcheese.chan.utils;
 import android.util.Log;
 
 import com.github.adamantcheese.chan.BuildConfig;
-
-import static com.github.adamantcheese.chan.utils.AndroidUtils.getApplicationLabel;
+import com.github.adamantcheese.chan.core.settings.ChanSettings;
 
 @SuppressWarnings("unused")
 public class Logger {
@@ -59,6 +58,26 @@ public class Logger {
 
     public static void d(Object source, String format, Object... args) {
         if (BuildConfig.DEBUG) {
+            Log.d(getTag(source), String.format(format, args));
+        }
+    }
+    //endregion DEBUG
+
+    //region VERBOSE DEBUG
+    public static void vd(Object source, String message) {
+        if (ChanSettings.verboseLogs.get()) {
+            Log.d(getTag(source), message);
+        }
+    }
+
+    public static void vd(Object source, String message, Throwable throwable) {
+        if (ChanSettings.verboseLogs.get()) {
+            Log.d(getTag(source), message, throwable);
+        }
+    }
+
+    public static void vd(Object source, String format, Object... args) {
+        if (ChanSettings.verboseLogs.get()) {
             Log.d(getTag(source), String.format(format, args));
         }
     }
@@ -106,6 +125,26 @@ public class Logger {
     }
     //endregion ERROR
 
+    //region VERBOSE ERROR
+    public static void ve(Object source, String message) {
+        if (ChanSettings.verboseLogs.get()) {
+            Log.e(getTag(source), message);
+        }
+    }
+
+    public static void ve(Object source, String message, Throwable throwable) {
+        if (ChanSettings.verboseLogs.get()) {
+            Log.e(getTag(source), message, throwable);
+        }
+    }
+
+    public static void ve(Object source, String format, Object... args) {
+        if (ChanSettings.verboseLogs.get()) {
+            Log.e(getTag(source), String.format(format, args));
+        }
+    }
+    //endregion ERROR
+
     //region WTF
     public static void wtf(Object source, String message) {
         Log.wtf(getTag(source), message);
@@ -141,7 +180,7 @@ public class Logger {
     //endregion TEST
 
     private static String getTag(Object o) {
-        String tagPrefix = getApplicationLabel() + " | ";
+        String tagPrefix = BuildConfig.APP_LABEL + " | ";
         if (o instanceof String) return tagPrefix + o;
         return tagPrefix + o.getClass().getSimpleName();
     }

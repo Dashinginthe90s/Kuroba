@@ -161,7 +161,7 @@ public class BoardSetupPresenter
         }
 
         final String query = userQuery == null ? null : userQuery.replace("/", "").replace("\\", "");
-        suggestionCall = BackgroundUtils.runWithDefaultExecutor(() -> {
+        suggestionCall = BackgroundUtils.runWithExecutor(BackgroundUtils.backgroundService, () -> {
             List<BoardSuggestion> suggestions = new ArrayList<>();
             if (site.boardsType().canList) {
                 Boards siteBoards = boardManager.getSiteBoards(site);
@@ -242,14 +242,14 @@ public class BoardSetupPresenter
 
         public String getName() {
             if (board != null) {
-                return BoardHelper.getName(board);
+                return board.getFormattedName();
             } else {
                 return "/" + code + "/";
             }
         }
 
         public String getDescription() {
-            return BoardHelper.getDescription(board);
+            return board == null ? "" : board.description;
         }
 
         public boolean isChecked() {

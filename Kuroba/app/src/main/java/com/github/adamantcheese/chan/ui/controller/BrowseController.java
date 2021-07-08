@@ -16,13 +16,14 @@
  */
 package com.github.adamantcheese.chan.ui.controller;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
 import android.content.Context;
+import android.graphics.drawable.AnimatedVectorDrawable;
+import android.os.Build;
+import android.text.SpannableStringBuilder;
+import android.text.TextUtils;
 import android.view.View;
-import android.view.animation.AccelerateInterpolator;
-import android.view.animation.Animation;
-import android.view.animation.RotateAnimation;
+
+import androidx.appcompat.app.AlertDialog;
 
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.model.Post;
@@ -34,39 +35,41 @@ import com.github.adamantcheese.chan.core.presenter.ThreadPresenter;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.ui.adapter.PostsFilter.Order;
-import com.github.adamantcheese.chan.ui.helper.BoardHelper;
 import com.github.adamantcheese.chan.ui.layout.BrowseBoardsFloatingMenu;
 import com.github.adamantcheese.chan.ui.layout.ThreadLayout;
 import com.github.adamantcheese.chan.ui.toolbar.NavigationItem;
-import com.github.adamantcheese.chan.ui.toolbar.ToolbarMenu;
 import com.github.adamantcheese.chan.ui.toolbar.ToolbarMenuItem;
 import com.github.adamantcheese.chan.ui.toolbar.ToolbarMenuSubItem;
 import com.github.adamantcheese.chan.ui.view.FloatingMenu;
 import com.github.adamantcheese.chan.ui.view.FloatingMenuItem;
+import com.github.adamantcheese.chan.utils.AndroidUtils;
 import com.github.adamantcheese.chan.utils.Logger;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import javax.inject.Inject;
 
+import static com.github.adamantcheese.chan.ui.widget.DefaultAlertDialog.getDefaultAlertBuilder;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.shareLink;
-import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class BrowseController
         extends ThreadController
         implements ThreadLayout.ThreadLayoutCallback, BrowsePresenter.Callback, BrowseBoardsFloatingMenu.ClickCallback,
                    ThreadSlideController.SlideChangeListener {
-    private static final int VIEW_MODE_ID = 1;
-    private static final int ARCHIVE_ID = 2;
-    private static final int REPLY_ITEM_ID = 3;
+    private enum OverflowMenuId {
+        VIEW_MODE,
+        ARCHIVE,
+        REPLY
+    }
 
     @Inject
     BrowsePresenter presenter;
 
+    // these together bodge together search term persistency between controllers and clear stuff out if you change boards
     public String searchQuery = null;
+    public boolean clearNextSearch = false;
 
     public BrowseController(Context context) {
         super(context);
@@ -120,16 +123,22 @@ public class BrowseController
         if (ChanSettings.moveSortToToolbar.get()) {
             menuBuilder.withItem(R.drawable.ic_fluent_list_24_filled, this::handleSorting);
         }
-        menuBuilder.withItem(R.drawable.ic_fluent_search_24_filled, this::searchClicked);
-        menuBuilder.withItem(R.drawable.ic_fluent_arrow_clockwise_24_filled, this::reloadClicked);
+        menuBuilder.withItem(R.drawable.ic_fluent_search_24_filled, (item) -> {
+            if (threadLayout.getPresenter().isBound()) {
+                ((ToolbarNavigationController) navigationController).showSearch();
+            }
+        }).withItem(R.drawable.animated_refresh_icon, this::reloadClicked);
 
         NavigationItem.MenuOverflowBuilder overflowBuilder = menuBuilder.withOverflow();
 
         if (!ChanSettings.enableReplyFab.get()) {
-            overflowBuilder.withSubItem(REPLY_ITEM_ID, R.string.action_reply, () -> threadLayout.openReply(true));
+            overflowBuilder.withSubItem(OverflowMenuId.REPLY,
+                    R.string.action_reply,
+                    () -> threadLayout.openReply(true)
+            );
         }
 
-        overflowBuilder.withSubItem(VIEW_MODE_ID,
+        overflowBuilder.withSubItem(OverflowMenuId.VIEW_MODE,
                 ChanSettings.boardViewMode.get() == ChanSettings.PostViewMode.LIST
                         ? R.string.action_switch_catalog
                         : R.string.action_switch_board,
@@ -140,39 +149,17 @@ public class BrowseController
             overflowBuilder.withSubItem(R.string.action_sort, () -> handleSorting(null));
         }
 
-        overflowBuilder.withSubItem(ARCHIVE_ID, R.string.thread_view_local_archive, this::openArchive)
+        overflowBuilder.withSubItem(OverflowMenuId.ARCHIVE, R.string.thread_view_local_archive, this::openArchive)
                 .withSubItem(R.string.action_open_browser, () -> handleShareAndOpenInBrowser(false))
                 .withSubItem(R.string.action_share, () -> handleShareAndOpenInBrowser(true))
                 .withSubItem(R.string.action_scroll_to_top, () -> threadLayout.getPresenter().scrollTo(0, false))
                 .withSubItem(R.string.action_scroll_to_bottom, () -> threadLayout.getPresenter().scrollTo(-1, false))
+                .withSubItem(R.string.board_info, this::showBoardInfo)
                 .build()
                 .build();
 
         // Presenter
         presenter.create(this);
-    }
-
-    private void searchClicked(ToolbarMenuItem item) {
-        ThreadPresenter presenter = threadLayout.getPresenter();
-        if (presenter.isBound()) {
-            View refreshView = item.getView();
-            refreshView.setScaleX(1f);
-            refreshView.setScaleY(1f);
-            refreshView.animate()
-                    .scaleX(10f)
-                    .scaleY(10f)
-                    .setDuration(500)
-                    .setInterpolator(new AccelerateInterpolator(2f))
-                    .setListener(new AnimatorListenerAdapter() {
-                        @Override
-                        public void onAnimationEnd(Animator animation) {
-                            refreshView.setScaleX(1f);
-                            refreshView.setScaleY(1f);
-                        }
-                    });
-
-            ((ToolbarNavigationController) navigationController).showSearch();
-        }
     }
 
     private void reloadClicked(ToolbarMenuItem item) {
@@ -181,32 +168,7 @@ public class BrowseController
             presenter.requestData();
 
             // Give the rotation menu item view a spin.
-            View refreshView = item.getView();
-            //Disable the ripple effect until the animation ends, but turn it back on so tap/hold ripple works
-            refreshView.setBackgroundResource(0);
-            Animation animation = new RotateAnimation(0,
-                    360,
-                    RotateAnimation.RELATIVE_TO_SELF,
-                    0.5f,
-                    RotateAnimation.RELATIVE_TO_SELF,
-                    0.5f
-            );
-            animation.setDuration(500L);
-            animation.setAnimationListener(new Animation.AnimationListener() {
-                @Override
-                public void onAnimationStart(Animation animation) {
-                }
-
-                @Override
-                public void onAnimationEnd(Animation animation) {
-                    refreshView.setBackgroundResource(R.drawable.ripple_item_background);
-                }
-
-                @Override
-                public void onAnimationRepeat(Animation animation) {
-                }
-            });
-            refreshView.startAnimation(animation);
+            ((AnimatedVectorDrawable) item.getView().getDrawable()).start();
         }
     }
 
@@ -240,28 +202,10 @@ public class BrowseController
         }
     }
 
-    private void handleShareAndOpenInBrowser(boolean share) {
-        ThreadPresenter presenter = threadLayout.getPresenter();
-        if (presenter.isBound()) {
-            if (presenter.getChanThread() == null) {
-                showToast(context, R.string.cannot_open_in_browser_already_deleted);
-                return;
-            }
-
-            String link = presenter.getLoadable().desktopUrl();
-
-            if (share) {
-                shareLink(link);
-            } else {
-                openLinkInBrowser(context, link);
-            }
-        }
-    }
-
     private void handleViewMode() {
         ChanSettings.PostViewMode postViewMode = ChanSettings.boardViewMode.get();
         if (postViewMode == ChanSettings.PostViewMode.LIST) {
-            postViewMode = ChanSettings.PostViewMode.CARD;
+            postViewMode = ChanSettings.PostViewMode.GRID;
         } else {
             postViewMode = ChanSettings.PostViewMode.LIST;
         }
@@ -271,7 +215,7 @@ public class BrowseController
         int viewModeText = postViewMode == ChanSettings.PostViewMode.LIST
                 ? R.string.action_switch_catalog
                 : R.string.action_switch_board;
-        navigation.findSubItem(VIEW_MODE_ID).text = getString(viewModeText);
+        navigation.findSubItem(OverflowMenuId.VIEW_MODE).text = getString(viewModeText);
 
         threadLayout.setPostViewMode(postViewMode);
     }
@@ -312,7 +256,7 @@ public class BrowseController
 
             items.add(new FloatingMenuItem<>(order, name));
         }
-        ToolbarMenuItem overflow = navigation.findItem(ToolbarMenu.OVERFLOW_ID);
+        ToolbarMenuItem overflow = navigation.findOverflow();
         View anchor = (item != null ? item : overflow).getView();
         FloatingMenu<Order> menu;
         if (anchor != null) {
@@ -335,18 +279,24 @@ public class BrowseController
 
     @Override
     public void loadBoard(Loadable loadable) {
-        loadable.title = BoardHelper.getName(loadable.board);
+        loadable.title = loadable.board.getFormattedName();
         navigation.title = "/" + loadable.boardCode + "/";
         navigation.subtitle = loadable.board.name;
 
         ThreadPresenter presenter = threadLayout.getPresenter();
+
+        if (presenter.getLoadable() != null
+                && !presenter.getLoadable().boardCode.equalsIgnoreCase(loadable.boardCode)) {
+            clearNextSearch = true;
+        }
+
         presenter.bindLoadable(loadable);
         presenter.requestData();
 
         ((ToolbarNavigationController) navigationController).toolbar.updateTitle(navigation);
-        ToolbarMenuSubItem archive = navigation.findSubItem(ARCHIVE_ID);
+        ToolbarMenuSubItem archive = navigation.findSubItem(OverflowMenuId.ARCHIVE);
         archive.enabled = loadable.board.site.boardFeature(Site.BoardFeature.ARCHIVE, loadable.board);
-        ToolbarMenuSubItem reply = navigation.findSubItem(REPLY_ITEM_ID);
+        ToolbarMenuSubItem reply = navigation.findSubItem(OverflowMenuId.REPLY);
         if (reply != null) {
             reply.enabled = loadable.board.site.siteFeature(Site.SiteFeature.POSTING);
         }
@@ -427,17 +377,80 @@ public class BrowseController
     }
 
     @Override
-    public void onSlideChanged() {
-        super.onSlideChanged();
-        if (getToolbar() != null && searchQuery != null) {
-            getToolbar().openSearch();
-            getToolbar().searchInput(searchQuery);
-            searchQuery = null;
+    public void onNavItemSet() {
+        super.onNavItemSet();
+
+        if (getToolbar() != null) {
+            if (!Objects.equals(navigation.searchText, searchQuery)) {
+                if (TextUtils.isEmpty(searchQuery) && clearNextSearch) {
+                    clearNextSearch = false;
+                    getToolbar().closeSearch();
+                    AndroidUtils.clearAnySelectionsAndKeyboards(context);
+                    return;
+                }
+            }
+            if (!TextUtils.isEmpty(searchQuery)) {
+                getToolbar().openSearch();
+                getToolbar().searchInput(searchQuery);
+                searchQuery = null;
+            }
         }
+    }
+
+    @Override
+    public void onSearchVisibilityChanged(boolean visible) {
+        super.onSearchVisibilityChanged(visible);
+        clearNextSearch = false;
     }
 
     @Override
     public Post getPostForPostImage(PostImage postImage) {
         return threadLayout.getPresenter().getPostFromPostImage(postImage);
+    }
+
+    private void showBoardInfo() {
+        Board board = presenter.currentBoard();
+        if (board == null) return;
+
+        AlertDialog dialog = getDefaultAlertBuilder(context).setPositiveButton(R.string.ok, null).create();
+        dialog.setCanceledOnTouchOutside(true);
+
+        SpannableStringBuilder text = new SpannableStringBuilder();
+
+        text.append('/')
+                .append(board.code)
+                .append('/')
+                .append('\n')
+                .append(board.name)
+                .append("\n")
+                .append(board.description)
+                .append('\n');
+        if (!board.workSafe) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && ChanSettings.enableEmoji.get() && ChanSettings.addDubs
+                    .get()) {
+                text.append("\uD83D\uDD1E");
+            } else {
+                text.append("NSFW");
+            }
+            text.append(" Board").append('\n');
+        }
+        text.append("Bump limit: ").append(String.valueOf(board.bumpLimit)).append(" posts").append("\n");
+        text.append("Image limit: ").append(String.valueOf(board.imageLimit)).append(" images").append("\n");
+
+        text.append("New thread cooldown: ")
+                .append(String.valueOf(board.cooldownThreads))
+                .append(" seconds")
+                .append("\n");
+        text.append("New reply cooldown: ")
+                .append(String.valueOf(board.cooldownReplies))
+                .append(" seconds")
+                .append("\n");
+        text.append("Image reply cooldown: ")
+                .append(String.valueOf(board.cooldownImages))
+                .append(" seconds")
+                .append("\n");
+
+        dialog.setMessage(text);
+        dialog.show();
     }
 }

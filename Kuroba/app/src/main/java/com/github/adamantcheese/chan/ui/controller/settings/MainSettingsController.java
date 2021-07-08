@@ -18,8 +18,6 @@ package com.github.adamantcheese.chan.ui.controller.settings;
 
 import android.content.Context;
 
-import androidx.appcompat.app.AlertDialog;
-
 import com.github.adamantcheese.chan.BuildConfig;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
@@ -30,7 +28,6 @@ import com.github.adamantcheese.chan.core.manager.ReportManager;
 import com.github.adamantcheese.chan.core.manager.SettingsNotificationManager.SettingNotification;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.ui.controller.FiltersController;
-import com.github.adamantcheese.chan.ui.controller.LicensesController;
 import com.github.adamantcheese.chan.ui.controller.ReportProblemController;
 import com.github.adamantcheese.chan.ui.controller.SitesSetupController;
 import com.github.adamantcheese.chan.ui.controller.crashlogs.ReviewCrashLogsController;
@@ -41,10 +38,11 @@ import com.github.adamantcheese.chan.ui.settings.SettingsGroup;
 
 import javax.inject.Inject;
 
-import static com.github.adamantcheese.chan.utils.AndroidUtils.getApplicationLabel;
+import static com.github.adamantcheese.chan.ui.widget.DefaultAlertDialog.getDefaultAlertBuilder;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLink;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
 
 public class MainSettingsController
         extends SettingsController {
@@ -107,54 +105,48 @@ public class MainSettingsController
         {
             SettingsGroup general = new SettingsGroup(R.string.settings_group_settings);
 
-            watchLink = (LinkSettingView) general.add(new LinkSettingView(this,
+            watchLink = general.add(new LinkSettingView(this,
                     R.string.settings_watch,
                     R.string.empty,
-                    v -> navigationController.pushController(new WatchSettingsController(context))
+                    (v, sv) -> navigationController.pushController(new WatchSettingsController(context))
             ));
 
-            sitesSetting = (LinkSettingView) general.add(new LinkSettingView(this,
+            sitesSetting = general.add(new LinkSettingView(this,
                     R.string.settings_sites,
                     R.string.empty,
-                    v -> navigationController.pushController(new SitesSetupController(context))
+                    (v, sv) -> navigationController.pushController(new SitesSetupController(context))
             ));
 
             general.add(new LinkSettingView(this,
                     R.string.settings_appearance,
                     R.string.settings_appearance_description,
-                    v -> navigationController.pushController(new AppearanceSettingsController(context))
+                    (v, sv) -> navigationController.pushController(new AppearanceSettingsController(context))
             ));
 
             general.add(new LinkSettingView(this,
                     R.string.settings_behavior,
                     R.string.settings_behavior_description,
-                    v -> navigationController.pushController(new BehaviourSettingsController(context))
+                    (v, sv) -> navigationController.pushController(new BehaviourSettingsController(context))
             ));
 
             general.add(new LinkSettingView(this,
                     R.string.settings_media,
                     R.string.settings_media_description,
-                    v -> navigationController.pushController(new MediaSettingsController(context))
+                    (v, sv) -> navigationController.pushController(new MediaSettingsController(context))
             ));
 
             general.add(new LinkSettingView(this,
                     R.string.settings_import_export,
                     R.string.settings_import_export_description,
-                    v -> navigationController.pushController(new ImportExportSettingsController(context,
+                    (v, sv) -> navigationController.pushController(new ImportExportSettingsController(context,
                             () -> navigationController.popController()
                     ))
             ));
 
-            filtersSetting = (LinkSettingView) general.add(new LinkSettingView(this,
+            filtersSetting = general.add(new LinkSettingView(this,
                     R.string.settings_filters,
                     R.string.empty,
-                    v -> navigationController.pushController(new FiltersController(context))
-            ));
-
-            general.add(new LinkSettingView(this,
-                    R.string.settings_experimental_settings_title,
-                    R.string.settings_experimental_settings_description,
-                    v -> navigationController.pushController(new ExperimentalSettingsController(context))
+                    (v, sv) -> navigationController.pushController(new FiltersController(context))
             ));
 
             groups.add(general);
@@ -167,9 +159,9 @@ public class MainSettingsController
         SettingsGroup about = new SettingsGroup(R.string.settings_group_about);
 
         LinkSettingView updateSettingView = new LinkSettingView(this,
-                getApplicationLabel() + " " + BuildConfig.VERSION_NAME,
+                BuildConfig.APP_LABEL + " " + BuildConfig.VERSION_NAME,
                 "Tap to check for updates",
-                v -> ((StartActivity) context).getUpdateManager().manualUpdateCheck()
+                (v, sv) -> ((StartActivity) context).getUpdateManager().manualUpdateCheck()
         );
         updateSettingView.settingNotificationType = SettingNotification.ApkUpdate;
         about.add(updateSettingView);
@@ -177,7 +169,7 @@ public class MainSettingsController
         LinkSettingView reportSettingView = new LinkSettingView(this,
                 R.string.settings_report,
                 R.string.settings_report_description,
-                v -> onReportSettingClick()
+                (v, sv) -> onReportSettingClick()
         );
         reportSettingView.settingNotificationType = SettingNotification.CrashLog;
         about.add(reportSettingView);
@@ -188,33 +180,29 @@ public class MainSettingsController
                 R.string.settings_collect_crash_logs_description
         ));
         about.add(new LinkSettingView(this,
-                "Find " + getApplicationLabel() + " on GitHub",
+                "Find " + BuildConfig.APP_LABEL + " on GitHub",
                 "View the source code, give feedback, submit bug reports",
-                v -> openLink(BuildConfig.GITHUB_ENDPOINT)
+                (v, sv) -> openLink(BuildConfig.GITHUB_ENDPOINT)
         ));
 
         about.add(new LinkSettingView(this,
                 R.string.settings_about_license,
                 R.string.settings_about_license_description,
-                v -> navigationController.pushController(new LicensesController(context,
-                        getString(R.string.settings_about_license),
-                        "file:///android_asset/html/license.html"
-                ))
+                (v, sv) -> openLinkInBrowser(context, "https://www.gnu.org/licenses/gpl-3.0.en.html")
         ));
 
         about.add(new LinkSettingView(this,
                 R.string.settings_about_licenses,
                 R.string.settings_about_licenses_description,
-                v -> navigationController.pushController(new LicensesController(context,
-                        getString(R.string.settings_about_licenses),
-                        "file:///android_asset/html/licenses.html"
-                ))
+                (v, sv) -> openLinkInBrowser(context,
+                        "https://htmlpreview.github.io/?" + BuildConfig.RESOURCES_ENDPOINT + "licenses.html"
+                )
         ));
 
         about.add(new LinkSettingView(this,
                 R.string.settings_developer,
                 R.string.empty,
-                v -> navigationController.pushController(new DeveloperSettingsController(context))
+                (v, sv) -> navigationController.pushController(new DeveloperSettingsController(context))
         ));
 
         groups.add(about);
@@ -224,7 +212,7 @@ public class MainSettingsController
         int crashLogsCount = reportManager.countCrashLogs();
 
         if (crashLogsCount > 0) {
-            new AlertDialog.Builder(context).setTitle(getString(R.string.settings_report_suggest_sending_logs_title,
+            getDefaultAlertBuilder(context).setTitle(getString(R.string.settings_report_suggest_sending_logs_title,
                     crashLogsCount
             ))
                     .setMessage(R.string.settings_report_suggest_sending_logs)

@@ -28,6 +28,7 @@ import android.graphics.Point;
 import android.graphics.PointF;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -35,7 +36,9 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
+import androidx.core.view.OneShotPreDrawListener;
 
 import com.davemorrissey.labs.subscaleview.ImageViewState;
 import com.github.adamantcheese.chan.R;
@@ -43,6 +46,8 @@ import com.github.adamantcheese.chan.controller.Controller;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
+import com.github.adamantcheese.chan.core.net.NetUtils;
+import com.github.adamantcheese.chan.core.net.NetUtilsClasses;
 import com.github.adamantcheese.chan.core.presenter.ImageViewerPresenter;
 import com.github.adamantcheese.chan.core.repository.BitmapRepository;
 import com.github.adamantcheese.chan.core.saver.ImageSaveTask;
@@ -63,8 +68,6 @@ import com.github.adamantcheese.chan.ui.view.OptionalSwipeViewPager;
 import com.github.adamantcheese.chan.ui.view.ThumbnailView;
 import com.github.adamantcheese.chan.ui.view.TransitionImageView;
 import com.github.adamantcheese.chan.utils.Logger;
-import com.github.adamantcheese.chan.utils.NetUtils;
-import com.github.adamantcheese.chan.utils.NetUtilsClasses;
 import com.github.adamantcheese.chan.utils.StringUtils;
 
 import java.io.File;
@@ -78,6 +81,7 @@ import okhttp3.HttpUrl;
 import static android.view.View.GONE;
 import static android.view.View.INVISIBLE;
 import static android.view.View.VISIBLE;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getDimen;
@@ -86,19 +90,18 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getWindow;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLink;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.shareLink;
-import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.waitForLayout;
-import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class ImageViewerController
         extends Controller
         implements ImageViewerPresenter.Callback, ToolbarMenuItem.OverflowMenuCallback,
                    ToolbarNavigationController.ToolbarSearchCallback {
-    private static final int TRANSITION_DURATION = 300;
     private static final float TRANSITION_FINAL_ALPHA = 0.85f;
 
-    private static final int VOLUME_ID = 1;
-    private static final int SAVE_ID = 2;
+    private enum MenuId {
+        VOLUME,
+        OPACITY,
+        SAVE
+    }
 
     @Inject
     ImageSaver imageSaver;
@@ -139,18 +142,27 @@ public class ImageViewerController
             menuBuilder.withItem(R.drawable.ic_fluent_arrow_reply_down_20_filled, this::goPostClicked);
         }
 
-        menuBuilder.withItem(VOLUME_ID, R.drawable.ic_fluent_speaker_off_24_filled, this::volumeClicked);
-        menuBuilder.withItem(SAVE_ID, R.drawable.ic_fluent_arrow_download_24_filled, this::saveClicked);
+        NavigationItem.MenuBuilder builder =
+                menuBuilder.withItem(MenuId.VOLUME, R.drawable.ic_fluent_speaker_off_24_filled, this::volumeClicked);
+        if (ChanSettings.opacityMenuItem.get()) {
+            builder.withItem(MenuId.OPACITY,
+                    ChanSettings.useOpaqueBackgrounds.get()
+                            ? R.drawable.ic_fluent_drop_24_filled
+                            : R.drawable.ic_fluent_drop_24_regular,
+                    this::opacityClicked
+            );
+        }
+        builder.withItem(MenuId.SAVE, R.drawable.ic_fluent_arrow_download_24_filled, this::saveClicked);
 
-        NavigationItem.MenuOverflowBuilder overflowBuilder = menuBuilder.withOverflow(this);
-        overflowBuilder.withSubItem(R.string.action_open_browser, this::openBrowserClicked);
-        overflowBuilder.withSubItem(R.string.action_share, () -> saveShare(true));
-        overflowBuilder.withSubItem(R.string.action_search_image, () -> presenter.showImageSearchOptions(navigation));
-        overflowBuilder.withSubItem(R.string.action_download_album, this::downloadAlbumClicked);
-        overflowBuilder.withSubItem(R.string.action_transparency_toggle,
-                () -> ((ImageViewerAdapter) pager.getAdapter()).toggleTransparency(presenter.getCurrentPostImage())
-        );
-        overflowBuilder.withSubItem(R.string.action_reload, this::forceReload);
+        NavigationItem.MenuOverflowBuilder overflowBuilder = menuBuilder.withOverflow(this)
+                .withSubItem(R.string.action_open_browser, this::openBrowserClicked)
+                .withSubItem(R.string.action_share, () -> saveShare(true))
+                .withSubItem(R.string.action_search_image, () -> presenter.showImageSearchOptions(navigation))
+                .withSubItem(R.string.action_download_album, this::downloadAlbumClicked);
+
+        if (!ChanSettings.opacityMenuItem.get()) {
+            overflowBuilder.withSubItem(R.string.action_transparency_toggle, () -> this.opacityClicked(null));
+        }
 
         overflowBuilder.build().build();
 
@@ -159,7 +171,7 @@ public class ImageViewerController
         // View setup
         getWindow(context).addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        view = inflate(context, R.layout.controller_image_viewer);
+        view = (ViewGroup) LayoutInflater.from(context).inflate(R.layout.controller_image_viewer, null);
         previewImage = view.findViewById(R.id.preview_image);
         pager = view.findViewById(R.id.pager);
         pager.addOnPageChangeListener(presenter);
@@ -167,12 +179,7 @@ public class ImageViewerController
 
         showVolumeMenuItem(false, true);
 
-        // Sanity check
-        if (parentController.view.getWindowToken() == null) {
-            throw new IllegalArgumentException("parentController.view not attached");
-        }
-
-        waitForLayout(parentController.view.getViewTreeObserver(), view, view1 -> {
+        OneShotPreDrawListener.add(parentController.view, () -> {
             // Pager is measured, but still invisible
             PostImage postImage = presenter.getCurrentPostImage();
             startPreviewInTransition(postImage);
@@ -181,22 +188,7 @@ public class ImageViewerController
                     presenter.getAllPostImages().size(),
                     postImage.spoiler()
             );
-            return true;
         });
-    }
-
-    @Override
-    public void onSearchEntered(String entered) {}
-
-    @Override
-    public void onSearchVisibilityChanged(boolean visible) {}
-
-    @Override
-    public void onNavItemSet() {
-        ToolbarMenuItem saveMenuItem = navigation.findItem(SAVE_ID);
-        if (saveMenuItem != null) {
-            saveMenuItem.setEnabled(false);
-        }
     }
 
     private void goPostClicked(ToolbarMenuItem item) {
@@ -206,11 +198,10 @@ public class ImageViewerController
             // hax: we need to wait for the recyclerview to do a layout before we know
             // where the new thumbnails are to get the bounds from to animate to
             this.imageViewerCallback = imageViewerCallback;
-            waitForLayout(view, view -> {
+            OneShotPreDrawListener.add(view, () -> {
                 showSystemUI();
                 handler.removeCallbacksAndMessages(null);
                 presenter.onExit();
-                return false;
             });
         } else {
             showSystemUI();
@@ -219,11 +210,15 @@ public class ImageViewerController
         }
     }
 
-    private void volumeClicked(ToolbarMenuItem item) {
+    private void volumeClicked(@Nullable ToolbarMenuItem item) {
         presenter.onVolumeClicked();
     }
 
-    private void saveClicked(ToolbarMenuItem item) {
+    private void opacityClicked(@Nullable ToolbarMenuItem item) {
+        ((ImageViewerAdapter) pager.getAdapter()).toggleTransparency(presenter.getCurrentPostImage());
+    }
+
+    private void saveClicked(@NonNull ToolbarMenuItem item) {
         item.setEnabled(false);
         saveShare(false);
 
@@ -244,13 +239,6 @@ public class ImageViewerController
         AlbumDownloadController albumDownloadController = new AlbumDownloadController(context);
         albumDownloadController.setPostImages(presenter.getLoadable(), all);
         navigationController.pushController(albumDownloadController);
-    }
-
-    private void forceReload() {
-        ToolbarMenuItem menuItem = navigation.findItem(SAVE_ID);
-        if (menuItem != null && presenter.forceReload()) {
-            menuItem.setEnabled(false);
-        }
     }
 
     @Override
@@ -393,27 +381,21 @@ public class ImageViewerController
 
     @Override
     public void updatePreviewImage(PostImage postImage) {
-        NetUtils.makeBitmapRequest(ChanSettings.shouldUseFullSizeImage(postImage) ? (postImage.spoiler()
-                ? postImage.getThumbnailUrl()
-                : postImage.imageUrl) : postImage.getThumbnailUrl(), new NetUtilsClasses.BitmapResult() {
+        NetUtils.makeBitmapRequest(postImage.getThumbnailUrl(), new NetUtilsClasses.BitmapResult() {
             @Override
-            public void onBitmapFailure(HttpUrl source, Exception e) {
+            public void onBitmapFailure(@NonNull HttpUrl source, Exception e) {
                 // the preview image will just remain as the last successful response; good enough
             }
 
             @Override
-            public void onBitmapSuccess(HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
+            public void onBitmapSuccess(@NonNull HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
                 previewImage.setBitmap(bitmap);
             }
-        }, previewImage.getWidth(), previewImage.getHeight());
+        });
     }
 
     public void saveImage() {
-        ToolbarMenuItem saveMenuItem = navigation.findItem(SAVE_ID);
-        if (saveMenuItem != null) {
-            saveMenuItem.setEnabled(false);
-        }
-
+        showDownloadMenuItem(false);
         saveShare(false);
     }
 
@@ -426,27 +408,36 @@ public class ImageViewerController
         loadingBar.setVisibility(show ? VISIBLE : GONE);
     }
 
-    public void onLoadProgress(Float[] progress) {
+    public void onLoadProgress(float progress) {
         loadingBar.setProgress(progress);
     }
 
     @Override
     public void showVolumeMenuItem(boolean show, boolean muted) {
-        ToolbarMenuItem volumeMenuItem = navigation.findItem(VOLUME_ID);
+        ToolbarMenuItem volumeMenuItem = navigation.findItem(MenuId.VOLUME);
         volumeMenuItem.setVisible(show);
         volumeMenuItem.setImage(muted
                 ? R.drawable.ic_fluent_speaker_off_24_filled
-                : R.drawable.ic_fluent_speaker_24_filled);
+                : R.drawable.ic_fluent_speaker_2_24_filled);
+    }
+
+    @Override
+    public void showOpacityMenuItem(boolean show, boolean opaque) {
+        ToolbarMenuItem opacityMenuItem = navigation.findItem(MenuId.OPACITY);
+        if (opacityMenuItem != null) {
+            opacityMenuItem.setVisible(show);
+            opacityMenuItem.setImage(opaque
+                    ? R.drawable.ic_fluent_drop_24_filled
+                    : R.drawable.ic_fluent_drop_24_regular);
+        }
     }
 
     @Override
     public void showDownloadMenuItem(boolean show) {
-        ToolbarMenuItem saveItem = navigation.findItem(SAVE_ID);
-        if (saveItem == null) {
-            return;
+        ToolbarMenuItem saveItem = navigation.findItem(MenuId.SAVE);
+        if (saveItem != null) {
+            saveItem.setEnabled(show);
         }
-
-        saveItem.setEnabled(show);
     }
 
     @Override
@@ -489,7 +480,6 @@ public class ImageViewerController
         });
 
         startAnimation.play(progress);
-        startAnimation.setDuration(TRANSITION_DURATION);
         startAnimation.setInterpolator(new DecelerateInterpolator(3f));
         startAnimation.addListener(new AnimatorListenerAdapter() {
             @Override
@@ -499,26 +489,24 @@ public class ImageViewerController
             }
         });
 
-        NetUtils.makeBitmapRequest(ChanSettings.shouldUseFullSizeImage(postImage) ? (postImage.spoiler()
-                ? postImage.getThumbnailUrl()
-                : postImage.imageUrl) : postImage.getThumbnailUrl(), new NetUtilsClasses.BitmapResult() {
+        NetUtils.makeBitmapRequest(postImage.getThumbnailUrl(), new NetUtilsClasses.BitmapResult() {
             @Override
-            public void onBitmapFailure(HttpUrl source, Exception e) {
+            public void onBitmapFailure(@NonNull HttpUrl source, Exception e) {
                 Logger.e(
                         ImageViewerController.this,
                         "onBitmapFailure for preview in transition, cannot show correct transition bitmap",
                         e
                 );
-                previewImage.setBitmap(BitmapRepository.error);
+                previewImage.setBitmap(BitmapRepository.empty);
                 startAnimation.start();
             }
 
             @Override
-            public void onBitmapSuccess(HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
+            public void onBitmapSuccess(@NonNull HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
                 previewImage.setBitmap(bitmap);
                 startAnimation.start();
             }
-        }, previewImage.getWidth(), previewImage.getHeight());
+        });
     }
 
     public void startPreviewOutTransition(final PostImage postImage) {
@@ -526,10 +514,6 @@ public class ImageViewerController
             return;
         }
 
-        doPreviewOutAnimation(postImage);
-    }
-
-    private void doPreviewOutAnimation(PostImage postImage) {
         // Find translation and scale if the current displayed image was a bigimage
         MultiImageView multiImageView = ((ImageViewerAdapter) pager.getAdapter()).find(postImage);
         View activeView = multiImageView.getActiveView();
@@ -566,7 +550,6 @@ public class ImageViewerController
 
             endAnimation.play(progress);
         }
-        endAnimation.setDuration(TRANSITION_DURATION);
         endAnimation.setInterpolator(new DecelerateInterpolator(3f));
         endAnimation.addListener(new AnimatorListenerAdapter() {
             @Override

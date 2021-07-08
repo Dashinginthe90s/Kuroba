@@ -61,7 +61,7 @@ public class AppearanceSettingsController
             appearance.add(new LinkSettingView(this,
                     getString(R.string.setting_theme),
                     ThemeHelper.getTheme().name,
-                    v -> navigationController.pushController(new ThemeSettingsController(context))
+                    (v, sv) -> navigationController.pushController(new ThemeSettingsController(context))
             ));
 
             groups.add(appearance);
@@ -84,7 +84,7 @@ public class AppearanceSettingsController
             requiresUiRefresh.add(layout.add(new BooleanSettingView(this,
                     ChanSettings.alwaysShowPostOptions,
                     "Always show post options",
-                    "Always displays the reply name, options, and subject field (if applicable)"
+                    "Always displays the reply name, options, flag selector, and subject field (if applicable)"
             )));
 
             requiresRestart.add(layout.add(new BooleanSettingView(this,
@@ -241,6 +241,24 @@ public class AppearanceSettingsController
                     R.string.setting_enable_emoji_description
             )));
 
+            requiresUiRefresh.add(post.add(new BooleanSettingView(this,
+                    ChanSettings.parseExtraQuotes,
+                    "Convert non-standard quotes",
+                    "Attempt to parse non-standard quotes as regular quotes, for those posts that try to avoid direct quoting, like @num or  #num"
+            )));
+
+            requiresUiRefresh.add(post.add(new BooleanSettingView(this,
+                    ChanSettings.parseExtraSpoilers,
+                    "Convert spoiler tags",
+                    "Attempt to parse [spoiler] tags on boards that don't support spoilers as regular spoiler tags"
+            )));
+
+            requiresUiRefresh.add(post.add(new BooleanSettingView(this,
+                    ChanSettings.mildMarkdown,
+                    "Parse Markdown subset",
+                    "Adds additional comment parsing for Markdown bold, italics, strikethrough, and code elements"
+            )));
+
             groups.add(post);
         }
 
@@ -273,16 +291,22 @@ public class AppearanceSettingsController
             )));
 
             images.add(new BooleanSettingView(this,
-                    ChanSettings.transparencyOn,
-                    "Image opacity",
-                    "Default state for image transparency in the viewer"
+                    ChanSettings.useOpaqueBackgrounds,
+                    "Image opacity default state",
+                    "Set image backgrounds to be opaque rather than transparent by default"
             ));
 
             images.add(new BooleanSettingView(this,
-                    ChanSettings.neverShowWebmControls,
-                    "Never show WEBM controls",
-                    "Treats WEBMs like GIFs; tap to close, double tap to play/pause, always automatically loops."
+                    ChanSettings.opacityMenuItem,
+                    "Opacity menu item",
+                    "Move the transparency toggle for images into the toolbar"
             ));
+
+            requiresUiRefresh.add(images.add(new BooleanSettingView(this,
+                    ChanSettings.neverShowAlbumCellInfo,
+                    "Never show album cell info",
+                    "Removes the file info from album cells"
+            )));
 
             groups.add(images);
         }

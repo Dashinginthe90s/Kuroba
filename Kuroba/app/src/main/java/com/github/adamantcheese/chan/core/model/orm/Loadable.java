@@ -210,7 +210,7 @@ public class Loadable
 
     @Override
     public int hashCode() {
-        return Objects.hash(mode, mode != INVALID ? boardCode : 0, mode == THREAD ? no : 0);
+        return Objects.hash(mode, mode != INVALID ? boardCode : 0, mode == THREAD ? no : 0, siteId);
     }
 
     @Override
@@ -238,6 +238,10 @@ public class Loadable
 
     public String desktopUrl() {
         return site.resolvable().desktopUrl(this, no);
+    }
+
+    public String desktopUrl(Post post) {
+        return site.resolvable().desktopUrl(this, post.no);
     }
 
     public static Loadable readFromParcel(Parcel parcel) {

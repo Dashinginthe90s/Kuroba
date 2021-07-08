@@ -18,15 +18,17 @@ package com.github.adamantcheese.chan.core.presenter;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.Typeface;
 import android.text.SpannableStringBuilder;
-import android.text.Spanned;
 import android.text.TextPaint;
-import android.text.TextUtils;
 import android.text.style.ClickableSpan;
+import android.text.style.StyleSpan;
+import android.text.style.URLSpan;
 import android.view.View;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.core.text.HtmlCompat;
 import androidx.exifinterface.media.ExifInterface;
 
 import com.github.adamantcheese.chan.R;
@@ -39,7 +41,6 @@ import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.model.orm.SavedReply;
 import com.github.adamantcheese.chan.core.repository.LastReplyRepository;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
-import com.github.adamantcheese.chan.core.site.Site;
 import com.github.adamantcheese.chan.core.site.SiteActions;
 import com.github.adamantcheese.chan.core.site.SiteAuthentication;
 import com.github.adamantcheese.chan.core.site.http.Reply;
@@ -53,13 +54,15 @@ import com.github.adamantcheese.chan.ui.helper.PostHelper;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.BitmapUtils;
 import com.github.adamantcheese.chan.utils.Logger;
-import com.github.adamantcheese.chan.utils.StringUtils;
+import com.google.common.io.Files;
 
 import java.io.File;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static com.github.adamantcheese.chan.Chan.instance;
+import static com.github.adamantcheese.chan.core.site.Site.BoardFeature.FORCED_ANONYMOUS;
 import static com.github.adamantcheese.chan.core.site.Site.BoardFeature.POSTING_IMAGE;
 import static com.github.adamantcheese.chan.core.site.Site.BoardFeature.POSTING_SPOILER;
 import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
@@ -107,9 +110,12 @@ public class ReplyPresenter
         callback.setCommentHint(loadable.isThreadMode());
         callback.showCommentCounter(loadable.board.maxCommentChars > 0);
         callback.enableImageAttach(canPostImages());
+        callback.enableName(canPostName());
 
         switchPage(Page.INPUT);
 
+        callback.openFlag(ChanSettings.alwaysShowPostOptions.get() && (loadable.board.countryFlags
+                || !loadable.board.boardFlags.isEmpty()));
         callback.openPostOptions(ChanSettings.alwaysShowPostOptions.get());
         callback.openSubject(ChanSettings.alwaysShowPostOptions.get() && loadable.isCatalogMode());
     }
@@ -135,6 +141,14 @@ public class ReplyPresenter
         return loadable.site.boardFeature(POSTING_SPOILER, loadable.board);
     }
 
+    public boolean canPostName() {
+        return !loadable.site.boardFeature(FORCED_ANONYMOUS, loadable.board);
+    }
+
+    public Map<String, String> getBoardFlags() {
+        return loadable.board.boardFlags;
+    }
+
     public void onOpen(boolean open) {
         if (open) {
             callback.focusComment();
@@ -157,30 +171,29 @@ public class ReplyPresenter
     public void onMoreClicked() {
         moreOpen = !moreOpen;
         callback.setExpanded(moreOpen);
-        callback.openPostOptions(moreOpen);
+        callback.openPostOptions(moreOpen || ChanSettings.alwaysShowPostOptions.get());
         if (loadable.isCatalogMode()) {
             callback.openSubject(moreOpen || ChanSettings.alwaysShowPostOptions.get());
         }
         if (previewOpen) {
             callback.openPreview(draft.file != null, draft.file);
         }
-        boolean is4chan = loadable.site instanceof Chan4;
         callback.openCommentQuoteButton(moreOpen);
         if (loadable.board.spoilers) {
             callback.openCommentSpoilerButton(moreOpen);
         }
-        if (is4chan && loadable.boardCode.equals("g")) {
+        if (loadable.board.codeTags) {
             callback.openCommentCodeButton(moreOpen);
         }
-        if (is4chan && loadable.boardCode.equals("sci")) {
+        if (loadable.board.mathTags) {
             callback.openCommentEqnButton(moreOpen);
             callback.openCommentMathButton(moreOpen);
         }
-        if (is4chan && (loadable.boardCode.equals("jp") || loadable.boardCode.equals("vip"))) {
+        if (loadable.site instanceof Chan4 && (loadable.boardCode.equals("jp") || loadable.boardCode.equals("vip"))) {
             callback.openCommentSJISButton(moreOpen);
         }
-        if (is4chan && loadable.boardCode.equals("pol")) {
-            callback.openFlag(moreOpen);
+        if (loadable.board.countryFlags || !loadable.board.boardFlags.isEmpty()) {
+            callback.openFlag(moreOpen || ChanSettings.alwaysShowPostOptions.get());
         }
     }
 
@@ -240,7 +253,7 @@ public class ReplyPresenter
     // Do NOT use the loadable from ReplyPresenter in this method, as it is not guaranteed to match the loadable associated with the reply object
     // Instead use the response's reply to get the loadable or generate a fresh loadable for a new thread
     @Override
-    public void onPostComplete(ReplyResponse replyResponse) {
+    public void onSuccess(ReplyResponse replyResponse) {
         if (replyResponse.posted) {
             LastReplyRepository.putLastReply(replyResponse.originatingLoadable);
             Loadable originatingLoadable = replyResponse.originatingLoadable;
@@ -290,30 +303,36 @@ public class ReplyPresenter
             switchPage(Page.AUTHENTICATION);
         } else {
             SpannableStringBuilder errorMessage = new SpannableStringBuilder(getString(R.string.reply_error));
+            int prefixLen = errorMessage.length();
             if (replyResponse.errorMessage != null) {
+                SpannableStringBuilder error =
+                        new SpannableStringBuilder(HtmlCompat.fromHtml(replyResponse.errorMessage,
+                                HtmlCompat.FROM_HTML_MODE_LEGACY
+                        ));
+                // update colors for url spans; unfortunately that means re-making them
+                URLSpan[] spans = error.getSpans(0, error.length(), URLSpan.class);
+                for (URLSpan s : spans) {
+                    String url = s.getURL();
+                    error.setSpan(new ClickableSpan() {
+                        @Override
+                        public void onClick(@NonNull View widget) {
+                            openLinkInBrowser(context, url);
+                        }
+
+                        @Override
+                        public void updateDrawState(@NonNull TextPaint ds) {
+                            ds.setColor(getColor(R.color.md_red_500));
+                            ds.setUnderlineText(true);
+                            ds.setFakeBoldText(true);
+                        }
+                    }, error.getSpanStart(s), error.getSpanEnd(s), 0);
+                    error.removeSpan(s);
+                }
                 errorMessage.clear();
-                errorMessage = errorMessage.append(getString(R.string.reply_error_message, replyResponse.errorMessage));
+                errorMessage.append(getString(R.string.reply_error_message, error));
+                prefixLen += 1;
             }
-
-            final String bannedString = "banned";
-            int bannedIndex = TextUtils.indexOf(errorMessage, bannedString);
-            if (bannedIndex >= 0 && replyResponse.originatingLoadable.site.endpoints().banned() != null) {
-                errorMessage.setSpan(new ClickableSpan() {
-                    @Override
-                    public void onClick(@NonNull View widget) {
-                        openLinkInBrowser(context,
-                                replyResponse.originatingLoadable.site.endpoints().banned().toString()
-                        );
-                    }
-
-                    @Override
-                    public void updateDrawState(@NonNull TextPaint ds) {
-                        ds.setColor(getColor(R.color.md_red_500));
-                        ds.setUnderlineText(true);
-                        ds.setFakeBoldText(true);
-                    }
-                }, bannedIndex, bannedIndex + bannedString.length(), Spanned.SPAN_INCLUSIVE_EXCLUSIVE);
-            }
+            errorMessage.setSpan(new StyleSpan(Typeface.BOLD), 0, prefixLen, 0);
 
             Logger.e(this, "onPostComplete error", errorMessage);
             switchPage(Page.INPUT);
@@ -322,13 +341,13 @@ public class ReplyPresenter
     }
 
     @Override
-    public void onUploadingProgress(int percent) {
+    public void onUploadProgress(int percent) {
         //called on a background thread!
         BackgroundUtils.runOnMainThread(() -> callback.onUploadingProgress(percent));
     }
 
     @Override
-    public void onPostError(Exception exception) {
+    public void onFailure(Exception exception) {
         Logger.e(this, "onPostError", exception);
 
         switchPage(Page.INPUT);
@@ -397,11 +416,8 @@ public class ReplyPresenter
 
     public void filenameNewClicked() {
         if (draft == null) return;
-        String currentExt = StringUtils.extractFileNameExtension(draft.fileName);
-        currentExt = (currentExt == null) ? "" : "." + currentExt;
-        draft.fileName = System.currentTimeMillis() + currentExt;
+        draft.fileName = System.currentTimeMillis() + "." + Files.getFileExtension(draft.fileName);
         callback.loadDraftIntoViews(draft);
-        showToast(context, "Filename changed.");
     }
 
     public void quote(Post post, boolean withText) {
@@ -454,6 +470,9 @@ public class ReplyPresenter
         if (draft == null) return;
         draft.file = file;
         draft.fileName = name;
+        if (ChanSettings.alwaysSetNewFilename.get()) {
+            filenameNewClicked();
+        }
         try {
             ExifInterface exif = new ExifInterface(file.getAbsolutePath());
             int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED);
@@ -465,7 +484,7 @@ public class ReplyPresenter
         if (BitmapUtils.getImageFormat(file) == Bitmap.CompressFormat.WEBP) {
             callback.openMessage(getString(R.string.file_type_may_not_be_supported));
         }
-        showPreview(name, file);
+        showPreview(draft.fileName, file);
     }
 
     @Override
@@ -482,9 +501,9 @@ public class ReplyPresenter
         selectedQuote = -1;
         callback.openMessage(null);
         callback.setExpanded(false);
-        callback.openSubject(
-                loadable != null && (ChanSettings.alwaysShowPostOptions.get() && loadable.isCatalogMode()));
-        callback.openFlag(false);
+        callback.openSubject(loadable != null && ChanSettings.alwaysShowPostOptions.get() && loadable.isCatalogMode());
+        callback.openFlag(loadable != null && (loadable.board.countryFlags || !loadable.board.boardFlags.isEmpty())
+                && ChanSettings.alwaysShowPostOptions.get());
         callback.openCommentQuoteButton(false);
         callback.openCommentSpoilerButton(false);
         callback.openCommentCodeButton(false);
@@ -516,14 +535,14 @@ public class ReplyPresenter
                     break;
                 case AUTHENTICATION:
                     callback.setPage(Page.AUTHENTICATION);
-                    SiteAuthentication authentication = loadable.site.actions().postAuthenticate();
+                    SiteAuthentication authentication = loadable.site.actions().postAuthenticate(loadable);
 
                     // cleanup resources tied to the new captcha layout/presenter
                     callback.destroyCurrentAuthentication();
 
                     try {
                         // If the user doesn't have WebView installed it will throw an error
-                        callback.initializeAuthentication(loadable.site,
+                        callback.initializeAuthentication(loadable,
                                 authentication,
                                 this,
                                 useV2NoJsCaptcha,
@@ -572,7 +591,7 @@ public class ReplyPresenter
         callback.setFileName(name);
         previewOpen = true;
 
-        boolean probablyWebm = "webm".equals(StringUtils.extractFileNameExtension(name));
+        boolean probablyWebm = "webm".equalsIgnoreCase(Files.getFileExtension(name));
         int maxSize = probablyWebm ? loadable.board.maxWebmSize : loadable.board.maxFileSize;
         //if the max size is undefined for the board, ignore this message
         if (file != null && file.length() > maxSize && maxSize != -1) {
@@ -609,7 +628,7 @@ public class ReplyPresenter
         void setPage(Page page);
 
         void initializeAuthentication(
-                Site site,
+                Loadable loadable,
                 SiteAuthentication authentication,
                 AuthenticationLayoutCallback callback,
                 boolean useV2NoJsCaptcha,
@@ -669,5 +688,7 @@ public class ReplyPresenter
         void showAuthenticationFailedError(Throwable error);
 
         void enableImageAttach(boolean canAttach);
+
+        void enableName(boolean canName);
     }
 }

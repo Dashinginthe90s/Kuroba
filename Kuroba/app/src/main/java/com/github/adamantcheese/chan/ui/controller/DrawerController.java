@@ -20,8 +20,11 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -29,11 +32,13 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import com.github.adamantcheese.chan.BuildConfig;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.controller.Controller;
 import com.github.adamantcheese.chan.controller.NavigationController;
@@ -54,7 +59,6 @@ import com.github.adamantcheese.chan.ui.layout.SearchLayout;
 import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 import com.github.adamantcheese.chan.ui.view.CrossfadeView;
 import com.github.adamantcheese.chan.utils.AndroidUtils;
-import com.google.android.material.snackbar.Snackbar;
 import com.skydoves.balloon.ArrowOrientation;
 
 import org.greenrobot.eventbus.EventBus;
@@ -76,11 +80,11 @@ import static com.github.adamantcheese.chan.Chan.instance;
 import static com.github.adamantcheese.chan.core.database.DatabaseLoadableManager.EPOCH_DATE;
 import static com.github.adamantcheese.chan.ui.controller.DrawerController.HeaderAction.CLEAR;
 import static com.github.adamantcheese.chan.ui.controller.DrawerController.HeaderAction.CLEAR_ALL;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.clearAnySelectionsAndKeyboards;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getRes;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
-import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 
 public class DrawerController
         extends Controller
@@ -94,6 +98,10 @@ public class DrawerController
 
     protected RecyclerView recyclerView;
 
+    private LinearLayout message;
+    private TextView messageText;
+    private TextView messageAction;
+
     private boolean pinMode = true;
     private boolean inViewMode = true;
 
@@ -105,7 +113,7 @@ public class DrawerController
     private final ItemTouchHelper.Callback drawerItemTouchHelperCallback = new ItemTouchHelper.Callback() {
         @Override
         public int getMovementFlags(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder) {
-            return makeMovementFlags(UP | DOWN, RIGHT | LEFT);
+            return makeMovementFlags(pinMode ? (UP | DOWN) : 0, LEFT | RIGHT);
         }
 
         @Override
@@ -158,9 +166,6 @@ public class DrawerController
     @Inject
     WatchManager watchManager;
 
-    @Inject
-    WakeManager wakeManager;
-
     public DrawerController(Context context) {
         super(context);
         EventBus.getDefault().register(this);
@@ -170,11 +175,10 @@ public class DrawerController
     public void onCreate() {
         super.onCreate();
 
-        view = inflate(context,
-                ChanSettings.reverseDrawer.get()
+        view = (ViewGroup) LayoutInflater.from(context)
+                .inflate(ChanSettings.reverseDrawer.get()
                         ? R.layout.controller_navigation_drawer_reverse
-                        : R.layout.controller_navigation_drawer
-        );
+                        : R.layout.controller_navigation_drawer, null);
         container = view.findViewById(R.id.container);
         drawerLayout = view.findViewById(R.id.drawer_layout);
         drawerLayout.setDrawerShadow(R.drawable.panel_shadow, Gravity.LEFT);
@@ -184,6 +188,7 @@ public class DrawerController
 
             @Override
             public void onDrawerOpened(@NonNull View drawerView) {
+                clearAnySelectionsAndKeyboards(context);
                 AndroidUtils.getBaseToolTip(context)
                         .setPreferenceName("DrawerPinHistoryHint")
                         .setArrowOrientation(ArrowOrientation.TOP)
@@ -255,7 +260,7 @@ public class DrawerController
         refreshLayout.setOnRefreshListener(() -> {
             refreshLayout.setRefreshing(false);
             if (pinMode) {
-                wakeManager.onBroadcastReceived(true);
+                WakeManager.getInstance().onBroadcastReceived(!BuildConfig.DEBUG);
             } else {
                 if (recyclerView.getAdapter() == null) return;
                 ((DrawerHistoryAdapter) recyclerView.getAdapter()).load();
@@ -263,6 +268,10 @@ public class DrawerController
         });
 
         updateBadge();
+
+        message = view.findViewById(R.id.message);
+        messageText = view.findViewById(R.id.message_text);
+        messageAction = view.findViewById(R.id.message_action);
     }
 
     @Override
@@ -289,7 +298,7 @@ public class DrawerController
     @Override
     public boolean onBack() {
         if (!inViewMode) {
-            inViewMode = !inViewMode;
+            inViewMode = true;
             buttonSearchSwitch.toggle(inViewMode, true);
             return true;
         } else if (drawerLayout.isDrawerOpen(drawer)) {
@@ -347,11 +356,9 @@ public class DrawerController
     private void onHeaderClickedInternal(boolean all) {
         final List<Pin> pins = watchManager.clearPins(all);
         if (!pins.isEmpty()) {
-            String text = getQuantityString(R.plurals.bookmark, pins.size(), pins.size());
-            Snackbar snackbar = Snackbar.make(drawerLayout, getString(R.string.drawer_pins_cleared, text), 4000);
-            snackbar.setGestureInsetBottomIgnored(true);
-            snackbar.setAction(R.string.undo, v -> watchManager.addAll(pins));
-            snackbar.show();
+            openMessage(getString(R.string.drawer_pins_cleared,
+                    getQuantityString(R.plurals.bookmark, pins.size(), pins.size())
+            ), v -> watchManager.addAll(pins), getString(R.string.undo));
         } else {
             int text;
             synchronized (watchManager.getAllPins()) {
@@ -359,9 +366,8 @@ public class DrawerController
                         ? R.string.drawer_pins_non_cleared
                         : R.string.drawer_pins_non_cleared_try_all;
             }
-            Snackbar snackbar = Snackbar.make(drawerLayout, text, Snackbar.LENGTH_LONG);
-            snackbar.setGestureInsetBottomIgnored(true);
-            snackbar.show();
+
+            openMessage(getString(text), null, "");
         }
     }
 
@@ -373,7 +379,11 @@ public class DrawerController
             toggleView.setImageResource(R.drawable.ic_fluent_bookmark_24_filled);
             ((TextView) buttonSearchSwitch.findViewById(R.id.header_text)).setText(R.string.drawer_history);
             handler.removeCallbacksAndMessages(null);
-
+            synchronized (watchManager.getAllPins()) {
+                for (Pin p : watchManager.getAllPins()) {
+                    p.drawerHighlight = false; // clear all highlights
+                }
+            }
             recyclerView.setAdapter(new DrawerHistoryAdapter(this));
         } else {
             // swap to pin mode
@@ -390,15 +400,42 @@ public class DrawerController
     public void onPinRemoved(Pin pin) {
         final Pin undoPin = pin.clone();
         watchManager.deletePin(pin);
-
-        Snackbar snackbar = Snackbar.make(drawerLayout,
-                getString(R.string.drawer_pin_removed, pin.loadable.title),
-                Snackbar.LENGTH_LONG
+        openMessage(getString(R.string.drawer_pin_removed, pin.loadable.title),
+                v -> watchManager.createPin(undoPin),
+                getString(R.string.undo)
         );
+    }
 
-        snackbar.setAction(R.string.undo, v -> watchManager.createPin(undoPin));
-        snackbar.setGestureInsetBottomIgnored(true);
-        snackbar.show();
+    private final Runnable closeMessageRunnable = new Runnable() {
+        @Override
+        public void run() {
+            messageText.setText(R.string.empty);
+            messageAction.setText(R.string.empty);
+            messageAction.setOnClickListener(null);
+            view.findViewById(R.id.action_divider).setVisibility(GONE);
+            message.setVisibility(GONE);
+        }
+    };
+
+    private void openMessage(
+            @NonNull String text, @Nullable View.OnClickListener action, @NonNull String actionText
+    ) {
+        view.removeCallbacks(closeMessageRunnable);
+        messageText.setText(text);
+        messageAction.setVisibility(actionText.isEmpty() ? GONE : VISIBLE);
+        messageAction.setText(actionText.isEmpty() ? "" : actionText);
+        view.findViewById(R.id.action_divider).setVisibility(actionText.isEmpty() ? GONE : VISIBLE);
+        message.findViewById(R.id.message_action).setOnClickListener(v -> {
+            if (action != null) {
+                action.onClick(v);
+            }
+            closeMessageRunnable.run();
+        });
+        message.setVisibility(TextUtils.isEmpty(text) ? GONE : VISIBLE);
+
+        if (!TextUtils.isEmpty(text)) {
+            view.postDelayed(closeMessageRunnable, 5000);
+        }
     }
 
     public void setPinHighlighted(Pin pin) {

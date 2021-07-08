@@ -27,6 +27,7 @@ import android.text.style.StyleSpan;
 import android.text.style.TypefaceSpan;
 import android.util.AttributeSet;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.CheckBox;
 import android.widget.ImageView;
@@ -45,12 +46,10 @@ import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.model.orm.Filter;
 import com.github.adamantcheese.chan.core.repository.BoardRepository;
 import com.github.adamantcheese.chan.core.site.common.CommonDataStructs.Boards;
-import com.github.adamantcheese.chan.ui.helper.BoardHelper;
 import com.github.adamantcheese.chan.ui.text.BackgroundColorSpanHashed;
 import com.github.adamantcheese.chan.ui.view.ColorPickerView;
 import com.github.adamantcheese.chan.ui.view.FloatingMenu;
 import com.github.adamantcheese.chan.ui.view.FloatingMenuItem;
-import com.github.adamantcheese.chan.utils.LayoutUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,6 +58,7 @@ import java.util.regex.Pattern;
 import javax.inject.Inject;
 
 import static com.github.adamantcheese.chan.Chan.inject;
+import static com.github.adamantcheese.chan.ui.widget.DefaultAlertDialog.getDefaultAlertBuilder;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getRes;
@@ -196,7 +196,7 @@ public class FilterLayout
         if (v == typeText) {
             @SuppressWarnings("unchecked")
             final SelectLayout<FilterType> selectLayout =
-                    (SelectLayout<FilterType>) LayoutUtils.inflate(getContext(), R.layout.layout_select, null);
+                    (SelectLayout<FilterType>) LayoutInflater.from(getContext()).inflate(R.layout.layout_select, null);
 
             List<SelectLayout.SelectItem<FilterType>> items = new ArrayList<>();
             for (FilterType filterType : FilterType.values()) {
@@ -208,7 +208,7 @@ public class FilterLayout
 
             selectLayout.setItems(items);
 
-            new AlertDialog.Builder(getContext()).setView(selectLayout)
+            getDefaultAlertBuilder(getContext()).setView(selectLayout)
                     .setPositiveButton(R.string.ok, (dialog, which) -> {
                         List<SelectLayout.SelectItem<FilterType>> items12 = selectLayout.getItems();
                         int flags = 0;
@@ -226,7 +226,7 @@ public class FilterLayout
         } else if (v == boardsSelector) {
             @SuppressWarnings("unchecked")
             final SelectLayout<Board> selectLayout =
-                    (SelectLayout<Board>) LayoutUtils.inflate(getContext(), R.layout.layout_select, null);
+                    (SelectLayout<Board>) LayoutInflater.from(getContext()).inflate(R.layout.layout_select, null);
 
             List<SelectLayout.SelectItem<Board>> items = new ArrayList<>();
 
@@ -236,7 +236,7 @@ public class FilterLayout
             }
 
             for (Board board : allSavedBoards) {
-                String name = BoardHelper.getName(board);
+                String name = board.getFormattedName();
                 boolean checked = filterEngine.matchesBoard(filter, board);
 
                 items.add(new SelectLayout.SelectItem<>(board, board.id, name, "", name, checked));
@@ -244,7 +244,7 @@ public class FilterLayout
 
             selectLayout.setItems(items);
 
-            new AlertDialog.Builder(getContext()).setView(selectLayout)
+            getDefaultAlertBuilder(getContext()).setView(selectLayout)
                     .setPositiveButton(R.string.ok, (dialog, which) -> {
                         List<SelectLayout.SelectItem<Board>> items1 = selectLayout.getItems();
                         boolean all = selectLayout.areAllChecked();
@@ -285,8 +285,10 @@ public class FilterLayout
             });
             menu.show();
         } else if (v == help) {
-            SpannableStringBuilder message = (SpannableStringBuilder) HtmlCompat.fromHtml(getString(R.string.filter_help),
-                    HtmlCompat.FROM_HTML_MODE_LEGACY);
+            SpannableStringBuilder message =
+                    (SpannableStringBuilder) HtmlCompat.fromHtml(getString(R.string.filter_help),
+                            HtmlCompat.FROM_HTML_MODE_LEGACY
+                    );
             TypefaceSpan[] typefaceSpans = message.getSpans(0, message.length(), TypefaceSpan.class);
             for (TypefaceSpan span : typefaceSpans) {
                 if (span.getFamily().equals("monospace")) {
@@ -305,7 +307,7 @@ public class FilterLayout
                 }
             }
 
-            new AlertDialog.Builder(getContext()).setTitle(R.string.filter_help_title)
+            getDefaultAlertBuilder(getContext()).setTitle(R.string.filter_help_title)
                     .setMessage(message)
                     .setNegativeButton("Open Regex101", (dialog1, which) -> openLink("https://regex101.com/"))
                     .setPositiveButton(R.string.close, null)
@@ -314,7 +316,7 @@ public class FilterLayout
             final ColorPickerView colorPickerView = new ColorPickerView(getContext());
             colorPickerView.setColor(filter.color);
 
-            AlertDialog dialog = new AlertDialog.Builder(getContext()).setTitle(R.string.filter_color_pick)
+            AlertDialog dialog = getDefaultAlertBuilder(getContext()).setTitle(R.string.filter_color_pick)
                     .setView(colorPickerView)
                     .setNegativeButton(R.string.cancel, null)
                     .setPositiveButton(R.string.ok, (dialog1, which) -> {
@@ -327,7 +329,7 @@ public class FilterLayout
     }
 
     private void updateFilterValidity() {
-        int extraFlags = (filter.type & FilterType.COUNTRY_CODE.flag) != 0 ? Pattern.CASE_INSENSITIVE : 0;
+        int extraFlags = (filter.type & FilterType.FLAG_CODE.flag) != 0 ? Pattern.CASE_INSENSITIVE : 0;
         boolean valid = !TextUtils.isEmpty(filter.pattern) && filterEngine.compile(filter.pattern, extraFlags) != null;
         pattern.setError(valid ? null : getString(R.string.filter_invalid_pattern));
 

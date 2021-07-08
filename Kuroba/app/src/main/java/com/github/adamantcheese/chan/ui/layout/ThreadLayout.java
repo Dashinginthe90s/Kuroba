@@ -23,6 +23,7 @@ import android.content.Context;
 import android.os.Build;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.ArrayAdapter;
@@ -36,7 +37,6 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 
 import com.github.adamantcheese.chan.R;
-import com.github.adamantcheese.chan.StartActivity;
 import com.github.adamantcheese.chan.controller.Controller;
 import com.github.adamantcheese.chan.core.database.DatabaseHideManager;
 import com.github.adamantcheese.chan.core.database.DatabaseUtils;
@@ -45,13 +45,15 @@ import com.github.adamantcheese.chan.core.model.ChanThread;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostHttpIcon;
 import com.github.adamantcheese.chan.core.model.PostImage;
+import com.github.adamantcheese.chan.core.model.PostLinkable;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.model.orm.PostHide;
 import com.github.adamantcheese.chan.core.presenter.ReplyPresenter.Page;
 import com.github.adamantcheese.chan.core.presenter.ThreadPresenter;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
-import com.github.adamantcheese.chan.core.site.ExternalSiteArchive;
+import com.github.adamantcheese.chan.core.settings.ChanSettings.PostViewMode;
 import com.github.adamantcheese.chan.core.site.Site;
+import com.github.adamantcheese.chan.core.site.archives.ExternalSiteArchive;
 import com.github.adamantcheese.chan.core.site.loader.ChanThreadLoader;
 import com.github.adamantcheese.chan.ui.adapter.PostsFilter;
 import com.github.adamantcheese.chan.ui.controller.ImageOptionsController;
@@ -62,10 +64,11 @@ import com.github.adamantcheese.chan.ui.toolbar.Toolbar;
 import com.github.adamantcheese.chan.ui.view.HidingFloatingActionButton;
 import com.github.adamantcheese.chan.ui.view.LoadView;
 import com.github.adamantcheese.chan.ui.view.ThumbnailView;
+import com.github.adamantcheese.chan.ui.widget.CancellableSnackbar;
 import com.github.adamantcheese.chan.utils.AndroidUtils;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
-import com.github.adamantcheese.chan.utils.LayoutUtils;
 import com.google.android.material.snackbar.Snackbar;
+import com.github.adamantcheese.chan.utils.RecyclerUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -74,12 +77,13 @@ import java.util.Set;
 import javax.inject.Inject;
 
 import static com.github.adamantcheese.chan.Chan.inject;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
+import static com.github.adamantcheese.chan.ui.widget.DefaultAlertDialog.getDefaultAlertBuilder;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.clearAnySelectionsAndKeyboards;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getQuantityString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.hideKeyboard;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.removeFromParentView;
-import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 /**
  * Wrapper around ThreadListLayout, so that it cleanly manages between a loading state
@@ -120,7 +124,6 @@ public class ThreadLayout
     private ProgressDialog deletingDialog;
     private boolean replyButtonEnabled;
     private boolean showingReplyButton = false;
-    private Snackbar newPostsNotification;
 
     public ThreadLayout(Context context) {
         this(context, null);
@@ -145,15 +148,16 @@ public class ThreadLayout
 
         // Inflate ThreadListLayout
         threadListLayout =
-                (ThreadListLayout) LayoutUtils.inflate(getContext(), R.layout.layout_thread_list, this, false);
+                (ThreadListLayout) LayoutInflater.from(getContext()).inflate(R.layout.layout_thread_list, this, false);
 
         // Inflate error layout
-        errorLayout = (LinearLayout) LayoutUtils.inflate(getContext(), R.layout.layout_thread_error, this, false);
+        errorLayout =
+                (LinearLayout) LayoutInflater.from(getContext()).inflate(R.layout.layout_thread_error, this, false);
         errorText = errorLayout.findViewById(R.id.text);
         errorRetryButton = errorLayout.findViewById(R.id.button);
 
         // Inflate thread loading layout
-        progressLayout = LayoutUtils.inflate(getContext(), R.layout.layout_thread_progress, this, false);
+        progressLayout = LayoutInflater.from(getContext()).inflate(R.layout.layout_thread_progress, this, false);
 
         // View setup
         presenter = new ThreadPresenter(getContext(), this);
@@ -169,7 +173,7 @@ public class ThreadLayout
             removeFromParentView(replyButton);
         } else {
             replyButton.setOnClickListener(this);
-            replyButton.setToolbar(callback.getToolbar());
+            replyButton.setToolbar(getToolbar());
         }
     }
 
@@ -190,10 +194,6 @@ public class ThreadLayout
         }
     }
 
-    public boolean canChildScrollUp() {
-        return visible != Visible.THREAD || threadListLayout.canChildScrollUp();
-    }
-
     public boolean onBack() {
         return threadListLayout.onBack();
     }
@@ -212,7 +212,7 @@ public class ThreadLayout
         }
     }
 
-    public void setPostViewMode(ChanSettings.PostViewMode postViewMode) {
+    public void setPostViewMode(PostViewMode postViewMode) {
         threadListLayout.setPostViewMode(postViewMode);
     }
 
@@ -285,23 +285,32 @@ public class ThreadLayout
     }
 
     @Override
-    public void openLink(final String link) {
+    public void refreshUI() {
+        threadListLayout.refreshUI();
+    }
+
+    @Override
+    public void openLink(PostLinkable linkable, final String link) {
         if (ChanSettings.openLinkConfirmation.get()) {
-            new AlertDialog.Builder(getContext()).setNegativeButton(R.string.cancel, null)
-                    .setPositiveButton(R.string.ok, (dialog, which) -> openLinkConfirmed(link))
+            getDefaultAlertBuilder(getContext()).setNegativeButton(R.string.cancel, null)
+                    .setPositiveButton(R.string.ok, (dialog, which) -> openLinkConfirmed(linkable, link))
                     .setTitle(R.string.open_link_confirmation)
                     .setMessage(link)
                     .show();
         } else {
-            openLinkConfirmed(link);
+            openLinkConfirmed(linkable, link);
         }
     }
 
-    public void openLinkConfirmed(final String link) {
-        if (ChanSettings.openLinkBrowser.get()) {
-            AndroidUtils.openLink(link);
+    public void openLinkConfirmed(final PostLinkable linkable, final String link) {
+        if (linkable.type == PostLinkable.Type.JAVASCRIPT) {
+            callback.openWebViewController(link, (String) linkable.value);
         } else {
-            openLinkInBrowser(getContext(), link);
+            if (ChanSettings.openLinkBrowser.get()) {
+                AndroidUtils.openLink(link);
+            } else {
+                openLinkInBrowser(getContext(), link);
+            }
         }
     }
 
@@ -326,11 +335,7 @@ public class ThreadLayout
     }
 
     public void showPostsPopup(Post forPost, List<Post> posts) {
-        View currentFocus = ((StartActivity) getContext()).getContentView().getFocusedChild();
-        if (currentFocus != null) {
-            hideKeyboard(currentFocus);
-            currentFocus.clearFocus();
-        }
+        clearAnySelectionsAndKeyboards(getContext());
         postPopupHelper.showPosts(forPost, posts);
     }
 
@@ -348,18 +353,18 @@ public class ThreadLayout
         }
     }
 
+    public PostViewMode getPostViewMode() {
+        return threadListLayout.getPostViewMode();
+    }
+
     @Override
-    public int[] getCurrentPosition() {
+    public RecyclerUtils.RecyclerViewPosition getCurrentPosition() {
         return threadListLayout.getIndexAndTop();
     }
 
     @Override
     public void showImages(List<PostImage> images, int index, Loadable loadable, ThumbnailView thumbnail) {
-        View currentFocus = ((StartActivity) getContext()).getContentView().getFocusedChild();
-        if (currentFocus != null) {
-            hideKeyboard(currentFocus);
-            currentFocus.clearFocus();
-        }
+        clearAnySelectionsAndKeyboards(getContext());
         callback.showImages(images, index, loadable, thumbnail);
     }
 
@@ -418,17 +423,14 @@ public class ThreadLayout
     }
 
     @Override
-    public void filterPostCountryCode(Post post) {
-        String countryCode = "";
+    public void filterPostFlagCode(Post post) {
+        StringBuilder flagCodes = new StringBuilder();
         if (post.httpIcons != null && !post.httpIcons.isEmpty()) {
             for (PostHttpIcon icon : post.httpIcons) {
-                if (icon.url.toString().contains("troll") || icon.url.toString().contains("country")) {
-                    countryCode = icon.name.substring(icon.name.indexOf('/') + 1);
-                    break;
-                }
+                flagCodes.append(icon.code).append("|");
             }
         }
-        callback.openFilterForType(FilterType.COUNTRY_CODE, countryCode);
+        callback.openFilterForType(FilterType.FLAG_CODE, flagCodes.toString().replaceAll("\\|$", ""));
     }
 
     @Override
@@ -449,7 +451,7 @@ public class ThreadLayout
             callback.openFilterForType(FilterType.IMAGE, post.image().fileHash);
         } else {
             ListView hashList = new ListView(getContext());
-            AlertDialog dialog = new AlertDialog.Builder(getContext()).setTitle("Select an image to filter.")
+            AlertDialog dialog = getDefaultAlertBuilder(getContext()).setTitle("Select an image to filter.")
                     .setView(hashList)
                     .create();
             dialog.setCanceledOnTouchOutside(true);
@@ -501,7 +503,7 @@ public class ThreadLayout
             deletingDialog.dismiss();
             deletingDialog = null;
 
-            new AlertDialog.Builder(getContext()).setMessage(message).setPositiveButton(R.string.ok, null).show();
+            getDefaultAlertBuilder(getContext()).setMessage(message).setPositiveButton(R.string.ok, null).show();
         }
     }
 
@@ -515,14 +517,14 @@ public class ThreadLayout
 
         presenter.refreshUI();
 
-        int snackbarStringId = hide ? R.string.thread_hidden : R.string.thread_removed;
-
-        Snackbar snackbar = Snackbar.make(this, snackbarStringId, Snackbar.LENGTH_LONG);
-        snackbar.setGestureInsetBottomIgnored(true);
-        snackbar.setAction(R.string.undo, v -> {
-            DatabaseUtils.runTask(databaseHideManager.removePostHide(postHide));
-            presenter.refreshUI();
-        }).show();
+        CancellableSnackbar.showSnackbar(this,
+                hide ? R.string.thread_hidden : R.string.thread_removed,
+                R.string.undo,
+                v -> {
+                    DatabaseUtils.runTask(databaseHideManager.removePostHide(postHide));
+                    presenter.refreshUI();
+                }
+        );
     }
 
     @Override
@@ -548,12 +550,10 @@ public class ThreadLayout
             formattedString = getQuantityString(R.plurals.post_removed, posts.size(), posts.size());
         }
 
-        Snackbar snackbar = Snackbar.make(this, formattedString, Snackbar.LENGTH_LONG);
-        snackbar.setGestureInsetBottomIgnored(true);
-        snackbar.setAction(R.string.undo, v -> {
+        CancellableSnackbar.showSnackbar(this, formattedString, R.string.undo, v -> {
             DatabaseUtils.runTask(databaseHideManager.removePostsHide(hideList));
             presenter.refreshUI();
-        }).show();
+        });
     }
 
     @Override
@@ -581,55 +581,37 @@ public class ThreadLayout
 
         presenter.refreshUI();
 
-        Snackbar snackbar =
-                Snackbar.make(this, getString(R.string.restored_n_posts, postsToRestore.size()), Snackbar.LENGTH_LONG);
-        snackbar.setGestureInsetBottomIgnored(true);
-        snackbar.show();
+        CancellableSnackbar.showSnackbar(
+                this,
+                getString(R.string.restored_n_posts, postsToRestore.size())
+        );
     }
 
     @Override
-    public void showNewPostsSnackbar(int more) {
-        if (more <= 0 || threadListLayout.scrolledToBottom() || !BackgroundUtils.isInForeground() || (
-                threadListLayout.isReplyLayoutOpen() && threadListLayout.getReplyPresenter().getPage() != Page.LOADING
-                        && ChanSettings.moveInputToBottom.get())) {
-            dismissSnackbar();
+    public void showNewPostsSnackbar(final Loadable loadable, int more) {
+        if (more <= 0 || !BackgroundUtils.isInForeground() || (threadListLayout.isReplyLayoutOpen()
+                && threadListLayout.getReplyPresenter().getPage() != Page.LOADING
+                && ChanSettings.moveInputToBottom.get())) {
+            CancellableSnackbar.cleanup();
             return;
         }
 
         if (threadListLayout.getReplyPresenter().getPage() != Page.AUTHENTICATION) {
-            String text = getQuantityString(R.plurals.thread_new_posts, more, more);
-            dismissSnackbar();
-            newPostsNotification = Snackbar.make(this, text, Snackbar.LENGTH_LONG);
-            newPostsNotification.setGestureInsetBottomIgnored(true);
-            newPostsNotification.setAction(R.string.thread_new_posts_goto, v -> {
-                presenter.onNewPostsViewClicked();
-                dismissSnackbar();
-            }).show();
-        } else {
-            dismissSnackbar();
+            CancellableSnackbar.showSnackbar(this,
+                    getQuantityString(R.plurals.thread_new_posts, more, more),
+                    R.string.thread_new_posts_goto,
+                    v -> {
+                        if (loadable == presenter.getLoadable()) {
+                            presenter.onNewPostsViewClicked();
+                        }
+                    }
+            );
         }
-    }
-
-    private void dismissSnackbar() {
-        if (newPostsNotification != null) {
-            newPostsNotification.dismiss();
-            newPostsNotification = null;
-        }
-    }
-
-    @Override
-    public void onDetachedFromWindow() {
-        dismissSnackbar();
-        super.onDetachedFromWindow();
     }
 
     @Override
     public void showImageReencodingWindow() {
-        View currentFocus = ((StartActivity) getContext()).getContentView().getFocusedChild();
-        if (currentFocus != null) {
-            hideKeyboard(currentFocus);
-            currentFocus.clearFocus();
-        }
+        clearAnySelectionsAndKeyboards(getContext());
         try {
             presentController(new ImageOptionsController(getContext(), presenter.getLoadable(), this));
         } catch (Exception e) {
@@ -656,7 +638,6 @@ public class ThreadLayout
             replyButton.animate()
                     .setInterpolator(new DecelerateInterpolator(2f))
                     .setStartDelay(show ? 100 : 0)
-                    .setDuration(200)
                     .alpha(show ? 1f : 0f)
                     .scaleX(show ? 1f : 0f)
                     .scaleY(show ? 1f : 0f)
@@ -683,15 +664,12 @@ public class ThreadLayout
             if (this.visible == Visible.THREAD) {
                 threadListLayout.cleanup();
                 postPopupHelper.popAll();
-                if (presenter.getLoadable() == null || presenter.getLoadable().isThreadMode()) {
-                    showSearch(false);
-                }
-                dismissSnackbar();
+                CancellableSnackbar.cleanup();
             }
 
             this.visible = visible;
             showReplyButton(false);
-            callback.hideSwipeRefreshLayout();
+            threadListLayout.hideSwipeRefreshLayout();
             switch (visible) {
                 case EMPTY:
                     loadView.setView(inflateEmptyView());
@@ -707,13 +685,14 @@ public class ThreadLayout
                     break;
                 case ERROR:
                     loadView.setView(errorLayout);
+                    threadListLayout.gainedFocus();
                     break;
             }
         }
     }
 
     private View inflateEmptyView() {
-        View view = LayoutUtils.inflate(getContext(), R.layout.layout_empty_setup, null);
+        View view = LayoutInflater.from(getContext()).inflate(R.layout.layout_empty_setup, null);
         TextView tv = view.findViewById(R.id.feature);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -751,7 +730,7 @@ public class ThreadLayout
                 ? getString(R.string.thread_layout_hide_whole_chain_as_well)
                 : getString(R.string.thread_layout_remove_whole_chain_as_well);
 
-        AlertDialog alertDialog = new AlertDialog.Builder(getContext()).setMessage(message)
+        AlertDialog alertDialog = getDefaultAlertBuilder(getContext()).setMessage(message)
                 .setPositiveButton(positiveButtonText,
                         (dialog, which) -> presenter.hideOrRemovePosts(hide, true, post, threadNo)
                 )
@@ -780,7 +759,7 @@ public class ThreadLayout
 
         void openReportController(Post post);
 
-        void hideSwipeRefreshLayout();
+        void openWebViewController(String baseUrl, String javascript);
 
         Toolbar getToolbar();
 

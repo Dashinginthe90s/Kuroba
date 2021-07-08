@@ -17,6 +17,7 @@
 package com.github.adamantcheese.chan.ui.controller;
 
 import android.content.Context;
+import android.view.LayoutInflater;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -38,10 +39,7 @@ import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 import com.github.adamantcheese.chan.ui.view.LoadView;
 import com.github.adamantcheese.chan.ui.view.ThumbnailView;
 import com.github.adamantcheese.chan.utils.RecyclerUtils;
-
-import java.util.List;
-
-import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
+import com.github.adamantcheese.chan.utils.RecyclerUtils.RecyclerViewPosition;
 
 public class PostRepliesController
         extends BaseFloatingController {
@@ -94,10 +92,6 @@ public class PostRepliesController
         return thumbnail;
     }
 
-    public List<Post> getPostRepliesData() {
-        return displayingData.posts;
-    }
-
     public void scrollTo(int displayPosition) {
         if (displayPosition >= 0) {
             recyclerView.smoothScrollToPosition(displayPosition);
@@ -109,12 +103,10 @@ public class PostRepliesController
     public void displayData(Loadable loadable, final PostPopupHelper.RepliesData data) {
         displayingData = data;
 
-        View dataView;
-        if (ChanSettings.repliesButtonsBottom.get()) {
-            dataView = inflate(context, R.layout.layout_post_replies_bottombuttons);
-        } else {
-            dataView = inflate(context, R.layout.layout_post_replies);
-        }
+        View dataView = LayoutInflater.from(context)
+                .inflate(ChanSettings.repliesButtonsBottom.get()
+                        ? R.layout.layout_post_replies_bottombuttons
+                        : R.layout.layout_post_replies, null);
 
         recyclerView = dataView.findViewById(R.id.post_list);
 
@@ -136,11 +128,6 @@ public class PostRepliesController
             }
 
             @Override
-            public int getMarkedNo() {
-                return displayingData.forPostNo;
-            }
-
-            @Override
             public boolean isCompact() {
                 return false;
             }
@@ -150,21 +137,18 @@ public class PostRepliesController
                 return false;
             }
         };
-        adapter.setPostViewMode(ChanSettings.PostViewMode.LIST);
         recyclerView.setAdapter(adapter);
         adapter.setThread(new ChanThread(loadable, displayingData.posts),
                 new PostsFilter(PostsFilter.Order.BUMP, null)
         );
-        adapter.setLastSeenIndicatorPosition(-1); //disable last seen indicator inside of reply popups
+        adapter.lastSeenIndicatorPosition = Integer.MIN_VALUE; //disable last seen indicator inside of reply popups
         LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerView.getLayoutManager();
-        layoutManager.scrollToPositionWithOffset(data.listViewIndex, data.listViewTop);
+        layoutManager.scrollToPositionWithOffset(data.position.index, data.position.top);
 
         recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                int[] indexAndTop = RecyclerUtils.getIndexAndTop(recyclerView);
-                data.listViewIndex = indexAndTop[0];
-                data.listViewTop = indexAndTop[1];
+                data.position = RecyclerUtils.getIndexAndTop(recyclerView);
             }
         });
 

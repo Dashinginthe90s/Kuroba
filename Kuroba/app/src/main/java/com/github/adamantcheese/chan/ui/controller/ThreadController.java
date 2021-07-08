@@ -22,8 +22,7 @@ import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.nfc.NfcEvent;
 import android.view.KeyEvent;
-
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+import android.view.LayoutInflater;
 
 import com.github.adamantcheese.chan.Chan;
 import com.github.adamantcheese.chan.R;
@@ -33,6 +32,8 @@ import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.model.orm.Filter;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
+import com.github.adamantcheese.chan.core.settings.ChanSettings;
+import com.github.adamantcheese.chan.ui.helper.PostHelper;
 import com.github.adamantcheese.chan.ui.helper.RefreshUIMessage;
 import com.github.adamantcheese.chan.ui.layout.ThreadLayout;
 import com.github.adamantcheese.chan.ui.toolbar.Toolbar;
@@ -44,15 +45,18 @@ import org.greenrobot.eventbus.Subscribe;
 
 import java.util.List;
 
-import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
-import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
-import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
+import okhttp3.HttpUrl;
+
+import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.openLink;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.shareLink;
 
 public abstract class ThreadController
         extends Controller
         implements ThreadLayout.ThreadLayoutCallback, ImageViewerController.ImageViewerCallback,
-                   SwipeRefreshLayout.OnRefreshListener, ToolbarNavigationController.ToolbarSearchCallback,
-                   NfcAdapter.CreateNdefMessageCallback, ThreadSlideController.SlideChangeListener {
+                   ToolbarNavigationController.ToolbarSearchCallback, NfcAdapter.CreateNdefMessageCallback,
+                   ThreadSlideController.SlideChangeListener {
     protected ThreadLayout threadLayout;
 
     public ThreadController(Context context) {
@@ -67,24 +71,10 @@ public abstract class ThreadController
 
         navigation.handlesToolbarInset = true;
 
-        threadLayout = (ThreadLayout) inflate(context, R.layout.layout_thread, null);
+        threadLayout = (ThreadLayout) LayoutInflater.from(context).inflate(R.layout.layout_thread, null);
         threadLayout.create(this);
 
-        view = new SwipeRefreshLayout(context) {
-            @Override
-            public boolean canChildScrollUp() {
-                return threadLayout.canChildScrollUp();
-            }
-        };
-        view.addView(threadLayout);
-        // allows the recycler to have inertia and the drawer to be opened without the recycler taking the event away from
-        // the drawer slide-to-open event
-        ((SwipeRefreshLayout) view).setLegacyRequestDisallowInterceptTouchEventEnabled(true);
-
-        ((SwipeRefreshLayout) view).setOnRefreshListener(this);
-
-        int toolbarHeight = getToolbar().getToolbarHeight();
-        ((SwipeRefreshLayout) view).setProgressViewOffset(false, toolbarHeight - dp(40), toolbarHeight + dp(64 - 40));
+        view = threadLayout;
     }
 
     @Override
@@ -104,6 +94,25 @@ public abstract class ThreadController
      */
     public Loadable getLoadable() {
         return threadLayout.getPresenter().getLoadable();
+    }
+
+    public void handleShareAndOpenInBrowser(boolean share) {
+        Loadable threadLoadable = threadLayout.getPresenter().getLoadable();
+        if (threadLoadable == null) {
+            return;
+        }
+
+        String link = threadLoadable.desktopUrl();
+
+        if (share) {
+            shareLink(link);
+        } else {
+            if (ChanSettings.openLinkBrowser.get()) {
+                openLink(link);
+            } else {
+                openLinkInBrowser(context, link);
+            }
+        }
     }
 
     public void highlightPostNo(int postNo) {
@@ -127,21 +136,11 @@ public abstract class ThreadController
 
     @Subscribe
     public void onEvent(RefreshUIMessage message) {
-        onRefresh();
-    }
-
-    @Override
-    public void onRefresh() {
         threadLayout.getPresenter().requestData();
     }
 
     @Override
     public NdefMessage createNdefMessage(NfcEvent event) {
-        if (threadLayout.getPresenter().getChanThread() == null) {
-            showToast(context, R.string.cannot_send_thread_via_nfc_already_deleted);
-            return null;
-        }
-
         Loadable loadable = getLoadable();
         String url = null;
         NdefMessage message = null;
@@ -165,7 +164,21 @@ public abstract class ThreadController
 
     @Override
     public void openReportController(final Post post) {
-        navigationController.pushController(new ReportController(context, post, getLoadable()));
+        navigationController.pushController(new WebViewController(
+                context,
+                getString(R.string.report_screen, PostHelper.getTitle(post, getLoadable())),
+                post.board.site.endpoints().report(post)
+        ));
+        // todo setting here?
+        // threadLayout.getPresenter().hideOrRemovePosts(true, false, post, post.opId);
+    }
+
+    @Override
+    public void openWebViewController(String baseUrl, String javascript) {
+        WebViewController javascriptController =
+                new WebViewController(context, "Javascript link", HttpUrl.get(baseUrl));
+        javascriptController.setOptionalJavascriptAfterLoad(javascript);
+        navigationController.pushController(javascriptController);
     }
 
     public void selectPostImage(PostImage postImage) {
@@ -214,11 +227,6 @@ public abstract class ThreadController
     }
 
     @Override
-    public void hideSwipeRefreshLayout() {
-        ((SwipeRefreshLayout) view).setRefreshing(false);
-    }
-
-    @Override
     public Toolbar getToolbar() {
         return navigationController instanceof ToolbarNavigationController ? navigationController.getToolbar() : null;
     }
@@ -232,9 +240,6 @@ public abstract class ThreadController
     public void onSearchEntered(String entered) {
         threadLayout.getPresenter().onSearchEntered(entered);
     }
-
-    @Override
-    public void onNavItemSet() {}
 
     @Override
     public void openFilterForType(FilterType type, String filterText) {

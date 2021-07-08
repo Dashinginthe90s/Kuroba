@@ -23,7 +23,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.ParcelFileDescriptor;
 import android.provider.OpenableColumns;
 import android.text.TextUtils;
 import android.widget.Toast;
@@ -31,29 +30,23 @@ import android.widget.Toast;
 import androidx.annotation.Nullable;
 
 import com.github.adamantcheese.chan.R;
-import com.github.adamantcheese.chan.core.cache.FileCacheListener;
-import com.github.adamantcheese.chan.core.cache.FileCacheV2;
-import com.github.adamantcheese.chan.core.cache.downloader.CancelableDownload;
+import com.github.adamantcheese.chan.core.net.NetUtils;
+import com.github.adamantcheese.chan.core.net.NetUtilsClasses;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
-import com.github.adamantcheese.chan.utils.IOUtils;
-import com.github.adamantcheese.chan.utils.Logger;
-import com.github.k1rakishou.fsaf.FileManager;
-import com.github.k1rakishou.fsaf.file.RawFile;
+import com.google.common.io.Files;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.inject.Inject;
-
+import okhttp3.Call;
 import okhttp3.HttpUrl;
 
-import static com.github.adamantcheese.chan.Chan.inject;
+import static com.github.adamantcheese.chan.core.di.AppModule.getCacheDir;
+import static com.github.adamantcheese.chan.core.net.NetUtils.MB;
 import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getClipboardContent;
@@ -61,13 +54,8 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 
 public class ImagePickDelegate {
     private static final int IMAGE_PICK_RESULT = 2;
-    private static final long MAX_FILE_SIZE = 50 * 1024 * 1024;
+    private static final long MAX_FILE_SIZE = 50 * MB;
     private static final String DEFAULT_FILE_NAME = "file";
-
-    @Inject
-    FileManager fileManager;
-    @Inject
-    FileCacheV2 fileCacheV2;
 
     private final Activity activity;
     private ImagePickCallback callback;
@@ -76,11 +64,10 @@ public class ImagePickDelegate {
     private boolean success = false;
 
     @Nullable
-    private CancelableDownload cancelableDownload;
+    private Call cancelableDownload;
 
     public ImagePickDelegate(Activity activity) {
         this.activity = activity;
-        inject(this);
     }
 
     public void pick(ImagePickCallback callback, boolean longPressed) {
@@ -139,7 +126,6 @@ public class ImagePickDelegate {
         showToast(activity, R.string.image_url_get_attempt);
         HttpUrl clipboardURL;
         try {
-            //this is converted to a string again later, but this is an easy way of catching if the clipboard item is a URL
             clipboardURL = HttpUrl.get(getClipboardContent().toString());
         } catch (Exception exception) {
             showToast(activity, getString(R.string.image_url_get_failed, exception.getMessage()));
@@ -149,36 +135,32 @@ public class ImagePickDelegate {
             return;
         }
 
-        HttpUrl finalClipboardURL = clipboardURL;
         if (cancelableDownload != null) {
             cancelableDownload.cancel();
             cancelableDownload = null;
         }
 
-        cancelableDownload = fileCacheV2.enqueueNormalDownloadFileRequest(clipboardURL, new FileCacheListener() {
-            @Override
-            public void onSuccess(RawFile file, boolean immediate) {
-                showToast(activity, R.string.image_url_get_success);
-                Uri imageURL = Uri.parse(finalClipboardURL.toString());
-                callback.onFilePicked(imageURL.getLastPathSegment(), new File(file.getFullPath()));
-            }
+        String urlFileName = clipboardURL.pathSegments().get(clipboardURL.pathSize() - 1);
+        cancelableDownload = NetUtils.makeFileRequest(clipboardURL,
+                "clipboard_url",
+                Files.getFileExtension(urlFileName),
+                new NetUtilsClasses.ResponseResult<File>() {
+                    @Override
+                    public void onFailure(Exception e) {
+                        showToast(activity, getString(R.string.image_url_get_failed, e.getMessage()));
+                        callback.onFilePickError(true);
+                        reset();
+                    }
 
-            @Override
-            public void onNotFound() {
-                onFail(new IOException("Not found"));
-            }
-
-            @Override
-            public void onFail(Exception exception) {
-                showToast(activity, getString(R.string.image_url_get_failed, exception.getMessage()));
-                callback.onFilePickError(true);
-            }
-
-            @Override
-            public void onEnd() {
-                reset();
-            }
-        });
+                    @Override
+                    public void onSuccess(File result) {
+                        showToast(activity, R.string.image_url_get_success);
+                        callback.onFilePicked(urlFileName, result);
+                        reset();
+                    }
+                },
+                null
+        );
     }
 
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -235,36 +217,18 @@ public class ImagePickDelegate {
     }
 
     private void doFilePicked() {
-        RawFile cacheFile = fileManager.fromRawFile(getPickFile());
-
-        try (ParcelFileDescriptor fileDescriptor = activity.getContentResolver().openFileDescriptor(uri, "r")) {
-            if (fileDescriptor == null) {
-                throw new IOException("Couldn't open file descriptor for uri = " + uri);
-            }
-
-            try (InputStream is = new FileInputStream(fileDescriptor.getFileDescriptor());
-                 OutputStream os = fileManager.getOutputStream(cacheFile)) {
-                if (os == null) {
-                    throw new IOException(
-                            "Could not get OutputStream from the cacheFile, cacheFile = " + cacheFile.getFullPath());
-                }
-
-                success = IOUtils.copy(is, os, MAX_FILE_SIZE);
-            } catch (Exception e) {
-                Logger.e(this, "Error copying file from the file descriptor", e);
-            }
+        try (FileInputStream stream = new FileInputStream(activity.getContentResolver()
+                .openFileDescriptor(uri, "r")
+                .getFileDescriptor())) {
+            if (stream.available() > MAX_FILE_SIZE) throw new IOException("File too large!");
+            Files.asByteSink(getPickFile()).writeFrom(stream);
+            success = true;
         } catch (Exception ignored) {
-        }
-
-        if (!success) {
-            if (!fileManager.delete(cacheFile)) {
-                Logger.e(this, "Could not delete picked_file after copy fail");
-            }
         }
 
         BackgroundUtils.runOnMainThread(() -> {
             if (success) {
-                callback.onFilePicked(fileName, new File(cacheFile.getFullPath()));
+                callback.onFilePicked(fileName, getPickFile());
             } else {
                 callback.onFilePickError(false);
             }
@@ -273,7 +237,7 @@ public class ImagePickDelegate {
     }
 
     public File getPickFile() {
-        File cacheFile = new File(getAppContext().getCacheDir(), "picked_file");
+        File cacheFile = new File(getCacheDir(), "picked_file");
         try {
             if (!cacheFile.exists()) cacheFile.createNewFile(); //ensure the file exists for writing to
         } catch (Exception ignored) {
@@ -286,14 +250,6 @@ public class ImagePickDelegate {
         success = false;
         fileName = "";
         uri = null;
-    }
-
-    public void onDestroy() {
-        if (cancelableDownload != null) {
-            cancelableDownload.cancel();
-            cancelableDownload = null;
-        }
-        reset();
     }
 
     public interface ImagePickCallback {

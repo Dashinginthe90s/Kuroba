@@ -16,6 +16,7 @@
  */
 package com.github.adamantcheese.chan.core.manager;
 
+import com.github.adamantcheese.chan.core.di.AppModule;
 import com.github.adamantcheese.chan.core.model.ChanThread;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.orm.Board;
@@ -29,7 +30,6 @@ import com.github.adamantcheese.chan.ui.helper.RefreshUIMessage;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.github.adamantcheese.chan.utils.StringUtils;
-import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
 import org.greenrobot.eventbus.EventBus;
@@ -46,12 +46,9 @@ import static com.github.adamantcheese.chan.ui.helper.RefreshUIMessage.Reason.FI
 
 public class FilterWatchManager
         implements WakeManager.Wakeable {
-    private final WakeManager wakeManager;
     private final BoardRepository boardRepository;
     private final FilterEngine filterEngine;
     private final WatchManager watchManager;
-    private final Gson gson;
-    private final ChanLoaderManager chanLoaderManager;
 
     //filterLoaders keeps track of ChanThreadLoaders so they can be cleared correctly each alarm trigger
     //ignoredPosts keeps track of threads pinned by the filter manager and ignores them for future alarm triggers
@@ -65,25 +62,19 @@ public class FilterWatchManager
     private boolean processing = false;
 
     public FilterWatchManager(
-            WakeManager wakeManager,
             BoardRepository boardRepository,
             FilterEngine filterEngine,
-            WatchManager watchManager,
-            Gson gson,
-            ChanLoaderManager chanLoaderManager
+            WatchManager watchManager
     ) {
-        this.wakeManager = wakeManager;
         this.boardRepository = boardRepository;
         this.filterEngine = filterEngine;
         this.watchManager = watchManager;
-        this.gson = gson;
-        this.chanLoaderManager = chanLoaderManager;
 
         if (!filterEngine.getEnabledWatchFilters().isEmpty()) {
-            wakeManager.registerWakeable(this);
+            WakeManager.getInstance().registerWakeable(this);
         }
 
-        Set<Integer> previousIgnore = gson.fromJson(PersistableChanState.filterWatchIgnored.get(),
+        Set<Integer> previousIgnore = AppModule.gson.fromJson(PersistableChanState.filterWatchIgnored.get(),
                 new TypeToken<Set<Integer>>() {}.getType()
         );
         if (previousIgnore != null) ignoredPosts.addAll(previousIgnore);
@@ -95,16 +86,16 @@ public class FilterWatchManager
     public void onEvent(RefreshUIMessage message) {
         if (message.reason != FILTERS_CHANGED) return;
         if (filterEngine.getEnabledWatchFilters().isEmpty()) {
-            wakeManager.unregisterWakeable(this);
+            WakeManager.getInstance().unregisterWakeable(this);
         } else {
-            wakeManager.registerWakeable(this);
+            WakeManager.getInstance().registerWakeable(this);
         }
     }
 
     @Override
     public void onWake() {
         if (!processing) {
-            wakeManager.manageLock(true, FilterWatchManager.this);
+            WakeManager.getInstance().manageLock(true, FilterWatchManager.this);
             processing = true;
             populateFilterLoaders();
             if (!filterLoaders.keySet().isEmpty()) {
@@ -116,14 +107,14 @@ public class FilterWatchManager
                     loader.requestData();
                 }
             } else {
-                wakeManager.manageLock(false, FilterWatchManager.this);
+                WakeManager.getInstance().manageLock(false, FilterWatchManager.this);
             }
         }
     }
 
     private void populateFilterLoaders() {
         for (Map.Entry<ChanThreadLoader, CatalogLoader> entry : filterLoaders.entrySet()) {
-            chanLoaderManager.release(entry.getKey(), entry.getValue());
+            ChanLoaderManager.release(entry.getKey(), entry.getValue());
         }
         filterLoaders.clear();
         //get a set of boards to background load
@@ -141,7 +132,7 @@ public class FilterWatchManager
 
         for (Board b : boards) {
             CatalogLoader backgroundLoader = new CatalogLoader();
-            ChanThreadLoader catalogLoader = chanLoaderManager.obtain(Loadable.forCatalog(b), backgroundLoader);
+            ChanThreadLoader catalogLoader = ChanLoaderManager.obtain(Loadable.forCatalog(b), backgroundLoader);
             filterLoaders.put(catalogLoader, backgroundLoader);
         }
     }
@@ -179,13 +170,13 @@ public class FilterWatchManager
                     lastCheckedPostNumbers.add(post.no);
                 }
                 ignoredPosts.retainAll(lastCheckedPostNumbers);
-                PersistableChanState.filterWatchIgnored.setSync(gson.toJson(ignoredPosts));
+                PersistableChanState.filterWatchIgnored.setSync(AppModule.gson.toJson(ignoredPosts));
                 lastCheckedPosts.clear();
                 processing = false;
                 Logger.d(this,
                         "Finished processing filter loaders, ended at " + StringUtils.getCurrentTimeDefaultLocale()
                 );
-                wakeManager.manageLock(false, FilterWatchManager.this);
+                WakeManager.getInstance().manageLock(false, FilterWatchManager.this);
             }
         }
     }

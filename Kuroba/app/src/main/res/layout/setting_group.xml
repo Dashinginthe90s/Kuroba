@@ -24,18 +24,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     android:layout_marginBottom="6dp"
     android:background="?backcolor"
     android:elevation="4dp"
-    android:orientation="vertical"
-    tools:ignore="UnusedAttribute">
+    android:orientation="vertical">
 
     <TextView
         android:id="@+id/header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:ellipsize="end"
-        android:maxLines="1"
         android:paddingHorizontal="16dp"
         android:paddingTop="16dp"
-        android:singleLine="true"
         android:textColor="?android:textColorSecondary"
         android:textSize="16sp"
         tools:text="Setting group name" />

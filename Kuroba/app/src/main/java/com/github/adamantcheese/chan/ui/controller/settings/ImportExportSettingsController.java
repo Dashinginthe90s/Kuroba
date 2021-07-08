@@ -22,8 +22,8 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AlertDialog;
 
+import com.github.adamantcheese.chan.BuildConfig;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
 import com.github.adamantcheese.chan.core.presenter.ImportExportSettingsPresenter;
@@ -45,13 +45,13 @@ import org.jetbrains.annotations.NotNull;
 import javax.inject.Inject;
 
 import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.getApplicationLabel;
+import static com.github.adamantcheese.chan.ui.widget.DefaultAlertDialog.getDefaultAlertBuilder;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 
 public class ImportExportSettingsController
         extends SettingsController
         implements ImportExportSettingsPresenter.ImportExportSettingsCallbacks {
-    public static final String EXPORT_FILE_NAME = getApplicationLabel() + "_exported_settings.json";
+    public static final String EXPORT_FILE_NAME = BuildConfig.APP_LABEL + "_exported_settings.json";
 
     @Inject
     FileManager fileManager;
@@ -102,14 +102,14 @@ public class ImportExportSettingsController
                     this,
                     getString(R.string.export_settings),
                     getString(R.string.export_settings_to_a_file),
-                    v -> onExportClicked()
+                    (v, sv) -> onExportClicked()
             ));
 
             group.add(new LinkSettingView(
                     this,
                     getString(R.string.import_settings),
                     getString(R.string.import_settings_from_a_file),
-                    v -> onImportClicked()
+                    (v, sv) -> onImportClicked()
             ));
 
             groups.add(group);
@@ -134,7 +134,7 @@ public class ImportExportSettingsController
         String messagePartOne =
                 getString(R.string.import_or_export_warning_super_long_message_part_one, savedFilesString);
 
-        new AlertDialog.Builder(context).setTitle(getString(R.string.import_or_export_warning))
+        getDefaultAlertBuilder(context).setTitle(getString(R.string.import_or_export_warning))
                 .setMessage(messagePartOne)
                 .setPositiveButton(R.string.ok, (dialog, which) -> {
                     dialog.dismiss();
@@ -154,7 +154,7 @@ public class ImportExportSettingsController
         int positiveButtonId = R.string.import_or_export_dialog_positive_button_text;
         int negativeButtonId = R.string.import_or_export_dialog_negative_button_text;
 
-        new AlertDialog.Builder(context).setTitle(R.string.import_or_export_dialog_title)
+        getDefaultAlertBuilder(context).setTitle(R.string.import_or_export_dialog_title)
                 .setPositiveButton(positiveButtonId, (dialog, which) -> overwriteExisting())
                 .setNegativeButton(negativeButtonId, (dialog, which) -> createNew())
                 .create()
@@ -173,7 +173,10 @@ public class ImportExportSettingsController
 
             @Override
             public void onCancel(@NotNull String reason) {
-                showToast(context, reason, Toast.LENGTH_LONG);
+                // hack to ignore activity cancel toasts
+                if (!reason.contains("(0)")) {
+                    showToast(context, reason, Toast.LENGTH_LONG);
+                }
             }
         });
     }
@@ -192,7 +195,10 @@ public class ImportExportSettingsController
 
             @Override
             public void onCancel(@NotNull String reason) {
-                showToast(context, reason, Toast.LENGTH_LONG);
+                // hack to ignore activity cancel toasts
+                if (!reason.contains("(0)")) {
+                    showToast(context, reason, Toast.LENGTH_LONG);
+                }
             }
         });
     }

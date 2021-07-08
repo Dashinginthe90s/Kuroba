@@ -24,15 +24,12 @@ import android.graphics.Paint;
 import android.util.AttributeSet;
 import android.view.View;
 
-import androidx.annotation.NonNull;
-
 import com.github.adamantcheese.chan.R;
-import com.github.adamantcheese.chan.utils.BackgroundUtils;
 
 public class LoadingBar
         extends View {
-    @NonNull
-    private Float[] chunkLoadingProgress = new Float[1];
+
+    private float progress = 0.0f;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     public LoadingBar(Context context) {
@@ -53,35 +50,18 @@ public class LoadingBar
             a.recycle();
         }
         if (isInEditMode()) {
-            chunkLoadingProgress = new Float[]{.5f, .5f};
+            progress = 0.5f;
         }
     }
 
-    public void setProgress(@NonNull Float[] updatedProgress) {
-        BackgroundUtils.ensureMainThread();
-
-        // Set and clamp
-        chunkLoadingProgress = updatedProgress;
-        for (int i = 0; i < updatedProgress.length; i++) {
-            chunkLoadingProgress[i] = Math.min(Math.max(updatedProgress[i], .1f), 1f);
-        }
-
-        invalidate();
+    public void setProgress(float updatedProgress) {
+        progress = updatedProgress;
+        postInvalidate();
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-
-        float width = (float) getWidth() / chunkLoadingProgress.length;
-        float offset = 0f;
-
-        for (Float progress : chunkLoadingProgress) {
-            if (progress > 0f) {
-                canvas.drawRect(offset, 0f, offset + (width * progress), getHeight(), paint);
-            }
-
-            offset += width;
-        }
+        canvas.drawRect(0f, 0f, getWidth() * progress, getHeight(), paint);
     }
 }

@@ -17,118 +17,53 @@
 package com.github.adamantcheese.chan.ui.view;
 
 import android.content.Context;
-import android.content.res.TypedArray;
-import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Rect;
-import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
-import android.view.View;
 
-import com.github.adamantcheese.chan.Chan;
-import com.github.adamantcheese.chan.R;
-import com.github.adamantcheese.chan.core.cache.FileCacheListener;
-import com.github.adamantcheese.chan.core.cache.FileCacheV2;
-import com.github.adamantcheese.chan.core.cache.downloader.CancelableDownload;
 import com.github.adamantcheese.chan.core.model.PostImage;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
-import com.github.adamantcheese.chan.utils.BackgroundUtils;
-import com.github.adamantcheese.chan.utils.BitmapUtils;
-import com.github.adamantcheese.chan.utils.NetUtils;
-import com.github.adamantcheese.chan.utils.NetUtilsClasses;
-import com.github.k1rakishou.fsaf.file.RawFile;
-
-import java.io.File;
 
 import okhttp3.HttpUrl;
 
-import static com.github.adamantcheese.chan.utils.AndroidUtils.setClipboardContent;
-import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
+import static com.github.adamantcheese.chan.core.model.PostImage.Type.IFRAME;
+import static com.github.adamantcheese.chan.core.model.PostImage.Type.MOVIE;
+import static com.github.adamantcheese.chan.core.repository.DrawableRepository.playIcon;
 
 public class PostImageThumbnailView
-        extends FixedRatioThumbnailView
-        implements View.OnLongClickListener {
-    private PostImage postImage;
-    private final Drawable playIcon;
+        extends FixedRatioThumbnailView {
+    boolean drawPlayIcon = false;
     private final Rect bounds = new Rect();
-    private final float decodeSize;
-
-    private CancelableDownload fullsizeDownload;
 
     public PostImageThumbnailView(Context context) {
-        this(context, null);
+        super(context);
     }
 
     public PostImageThumbnailView(Context context, AttributeSet attrs) {
-        this(context, attrs, 0);
+        super(context, attrs);
     }
 
-    public PostImageThumbnailView(Context context, AttributeSet attrs, int defStyle) {
-        super(context, attrs, defStyle);
-        this.setOnLongClickListener(this);
-
-        playIcon = context.getDrawable(R.drawable.ic_fluent_play_circle_24_regular);
-
-        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.PostImageThumbnailView);
-        try {
-            decodeSize = a.getDimension(R.styleable.PostImageThumbnailView_decode_dimen, -1);
-        } finally {
-            a.recycle();
-        }
+    public PostImageThumbnailView(Context context, AttributeSet attrs, int defStyleAttr) {
+        super(context, attrs, defStyleAttr);
     }
 
-    public void setPostImage(final PostImage postImage) {
-        if (this.postImage == postImage) return;
+    /**
+     * @param postImage    The image to set
+     * @param maxDimension <0 for this view's width, 0 for exact bitmap dimension, >0 for scaled dimension
+     */
+    public void setPostImage(final PostImage postImage, int maxDimension) {
+        drawPlayIcon = postImage != null && errorText == null && (postImage.type == MOVIE || postImage.type == IFRAME);
 
-        this.postImage = postImage;
-        int width = decodeSize == -1 ? getWidth() : (int) decodeSize;
-        int height = decodeSize == -1 ? getHeight() : (int) decodeSize;
-
-        if (postImage != null) {
-            setUrl(postImage.getThumbnailUrl(), width, height);
-        } else {
-            setUrl(null, 0, 0);
+        if (postImage == null) {
+            setUrl(null, 0);
             return;
         }
 
         if (ChanSettings.shouldUseFullSizeImage(postImage)) {
-            if (fullsizeDownload != null) {
-                fullsizeDownload.cancel();
-                fullsizeDownload = null;
-            }
             HttpUrl url = postImage.spoiler() ? postImage.getThumbnailUrl() : postImage.imageUrl;
-            Bitmap cached = NetUtils.getCachedBitmap(url);
-            if (cached != null && cached.getWidth() == width && cached.getHeight() == height) {
-                onBitmapSuccess(url, cached, true);
-            } else {
-                fullsizeDownload =
-                        Chan.instance(FileCacheV2.class).enqueueNormalDownloadFileRequest(url, new FileCacheListener() {
-                            @Override
-                            public void onSuccess(RawFile file, boolean immediate) {
-                                BackgroundUtils.runWithDefaultExecutor(() -> BitmapUtils.decodeFile(new File(file.getFullPath()),
-                                        width * 2,
-                                        height * 2
-                                ), result -> {
-                                    if (result != null) {
-                                        NetUtils.storeExternalBitmap(url, result);
-                                        onBitmapSuccess(url, result, immediate);
-                                    } else {
-                                        onFail(new NullPointerException("Failed to decode bitmap."));
-                                    }
-                                });
-                            }
-
-                            @Override
-                            public void onFail(Exception exception) {
-                                onBitmapFailure(url, exception);
-                            }
-
-                            @Override
-                            public void onNotFound() {
-                                onFail(new NetUtilsClasses.HttpCodeException(404));
-                            }
-                        });
-            }
+            setUrl(url, maxDimension);
+        } else {
+            setUrl(postImage.getThumbnailUrl(), maxDimension);
         }
     }
 
@@ -136,26 +71,15 @@ public class PostImageThumbnailView
     public void draw(Canvas canvas) {
         super.draw(canvas);
 
-        if (postImage != null && (postImage.type == PostImage.Type.MOVIE || postImage.type == PostImage.Type.IFRAME)
-                && !error) {
-            int x = (int) (getWidth() / 2.0 - playIcon.getIntrinsicWidth() * 0.5);
-            int y = (int) (getHeight() / 2.0 - playIcon.getIntrinsicHeight() * 0.5);
+        if (drawPlayIcon) {
+            int x = (int) (getWidth() * 0.5 - playIcon.getIntrinsicWidth() * 0.5);
+            int y = (int) (getHeight() * 0.5 - playIcon.getIntrinsicHeight() * 0.5);
 
             bounds.set(x, y, x + playIcon.getIntrinsicWidth(), y + playIcon.getIntrinsicHeight());
+            Rect curBounds = playIcon.getBounds();
             playIcon.setBounds(bounds);
             playIcon.draw(canvas);
+            playIcon.setBounds(curBounds);
         }
-    }
-
-    @Override
-    public boolean onLongClick(View v) {
-        if (postImage == null || !ChanSettings.enableLongPressURLCopy.get()) {
-            return false;
-        }
-
-        setClipboardContent("Image URL", postImage.imageUrl.toString());
-        showToast(getContext(), R.string.image_url_copied_to_clipboard);
-
-        return true;
     }
 }

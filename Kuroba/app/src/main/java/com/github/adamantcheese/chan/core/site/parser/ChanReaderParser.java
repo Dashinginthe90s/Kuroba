@@ -21,21 +21,24 @@ import android.util.JsonReader;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.github.adamantcheese.chan.core.database.DatabaseHideManager;
 import com.github.adamantcheese.chan.core.database.DatabaseSavedReplyManager;
 import com.github.adamantcheese.chan.core.manager.FilterEngine;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.orm.Filter;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
+import com.github.adamantcheese.chan.core.model.orm.PostHide;
+import com.github.adamantcheese.chan.core.net.NetUtilsClasses;
 import com.github.adamantcheese.chan.core.site.loader.ChanLoaderResponse;
 import com.github.adamantcheese.chan.ui.theme.Theme;
 import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
-import com.github.adamantcheese.chan.utils.NetUtilsClasses.JSONProcessor;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,13 +56,16 @@ import static com.github.adamantcheese.chan.Chan.inject;
  * changed on the main thread.
  */
 public class ChanReaderParser
-        extends JSONProcessor<ChanLoaderResponse> {
+        implements NetUtilsClasses.Converter<ChanLoaderResponse, JsonReader> {
 
     @Inject
     FilterEngine filterEngine;
 
     @Inject
     DatabaseSavedReplyManager databaseSavedReplyManager;
+
+    @Inject
+    DatabaseHideManager databaseHideManager;
 
     private final Loadable loadable;
     private final List<Post> cached;
@@ -91,7 +97,7 @@ public class ChanReaderParser
     }
 
     @Override
-    public ChanLoaderResponse process(JsonReader reader)
+    public ChanLoaderResponse convert(JsonReader reader)
             throws Exception {
         ChanReaderProcessingQueue processing = new ChanReaderProcessingQueue(cached, loadable);
 
@@ -103,12 +109,26 @@ public class ChanReaderParser
             throw new IllegalArgumentException("Unknown mode");
         }
 
-        List<Post> list = parsePosts(processing);
-        return processPosts(processing.getOp(), list);
+        List<PostHide> removedPosts;
+        try {
+            removedPosts = databaseHideManager.getRemovedPostsWithThreadNo(processing.getOp().no);
+        } catch (Exception e) {
+            removedPosts = Collections.emptyList();
+        }
+
+        // add in extra removed posts from filters (for cached posts)
+        for (Post post : processing.getToReuse()) {
+            if (post.filterRemove) {
+                removedPosts.add(new PostHide(post.board.siteId, post.boardCode, post.no));
+            }
+        }
+
+        List<Post> list = parsePosts(processing, removedPosts);
+        return processPosts(processing.getOp(), list, removedPosts);
     }
 
     // Concurrently parses the new posts with an executor
-    private List<Post> parsePosts(ChanReaderProcessingQueue queue)
+    private List<Post> parsePosts(ChanReaderProcessingQueue queue, List<PostHide> removedPosts)
             throws InterruptedException, ExecutionException {
         List<Post> cached = queue.getToReuse();
         List<Post> total = new ArrayList<>(cached);
@@ -136,6 +156,7 @@ public class ChanReaderParser
                     databaseSavedReplyManager,
                     post,
                     reader,
+                    removedPosts,
                     internalNums,
                     currentTheme
             ));
@@ -151,8 +172,8 @@ public class ChanReaderParser
         return total;
     }
 
-    private ChanLoaderResponse processPosts(Post.Builder op, List<Post> allPost) {
-        ChanLoaderResponse response = new ChanLoaderResponse(op, new ArrayList<>(allPost.size()));
+    private ChanLoaderResponse processPosts(Post.Builder op, List<Post> allPost, List<PostHide> removedPosts) {
+        ChanLoaderResponse response = new ChanLoaderResponse(op);
 
         List<Post> cachedPosts = new ArrayList<>();
         List<Post> newPosts = new ArrayList<>();
@@ -191,6 +212,13 @@ public class ChanReaderParser
         allPosts.addAll(cachedPosts);
         allPosts.addAll(newPosts);
 
+        // add in removed posts from new posts
+        for (Post post : newPosts) {
+            if (post.filterRemove) {
+                removedPosts.add(new PostHide(post.board.siteId, post.boardCode, post.no));
+            }
+        }
+
         if (loadable.isThreadMode()) {
             Map<Integer, Post> postsByNo = new HashMap<>();
             for (Post post : allPosts) {
@@ -200,24 +228,36 @@ public class ChanReaderParser
             // Maps post no's to a list of no's that that post received replies from
             Map<Integer, List<Integer>> replies = new HashMap<>();
 
+            // for all posts, for any posts this post is replying to (ie has >>1234), add this post to a list of numbers for the replying number
+            // ie map this post to another post's repliesFrom, temporarily
             for (Post sourcePost : allPosts) {
                 for (int replyTo : sourcePost.repliesTo) {
                     List<Integer> value = replies.get(replyTo);
                     if (value == null) {
-                        value = new ArrayList<>(3);
+                        value = new ArrayList<>(1);
                         replies.put(replyTo, value);
                     }
                     value.add(sourcePost.no);
                 }
             }
 
+            // for all post numbers, now properly assign the repliesFrom field, removing any removed posts along the way
             for (Map.Entry<Integer, List<Integer>> entry : replies.entrySet()) {
                 int key = entry.getKey();
                 List<Integer> value = entry.getValue();
-
                 Post subject = postsByNo.get(key);
+
                 // Sometimes a post replies to a ghost, a post that doesn't exist.
                 if (subject != null) {
+                    // If a post has been removed, remove it from the replies list
+                    Iterator<Integer> repliesFrom = value.iterator();
+                    while (repliesFrom.hasNext()) {
+                        Integer replyFrom = repliesFrom.next();
+                        if (removedPosts.contains(new PostHide(subject.board.siteId, subject.board.code, replyFrom))) {
+                            repliesFrom.remove();
+                        }
+                    }
+
                     subject.repliesFrom.clear();
                     subject.repliesFrom.addAll(value);
                 }

@@ -17,6 +17,7 @@ import androidx.exifinterface.media.ExifInterface;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.presenter.ImageReencodingPresenter;
 import com.github.adamantcheese.chan.core.repository.BitmapRepository;
+import com.google.common.io.Files;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -31,15 +32,12 @@ import kotlin.random.Random;
 import static android.graphics.Bitmap.CompressFormat.JPEG;
 import static android.graphics.Bitmap.CompressFormat.PNG;
 import static android.graphics.Bitmap.CompressFormat.WEBP;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.getAppContext;
+import static com.github.adamantcheese.chan.core.di.AppModule.getCacheDir;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getRes;
 
 public class BitmapUtils {
     private static final String TAG = "BitmapUtils";
     private static final int PIXEL_DIFF = 5;
-    private static final String TEMP_FILE_EXTENSION = ".tmp";
-    private static final String TEMP_FILE_NAME = "temp_file_name";
-    private static final String TEMP_FILE_NAME_WITH_CACHE_DIR = "cache/" + TEMP_FILE_NAME;
 
     private static final byte[] PNG_HEADER = new byte[]{(byte) 137, 'P', 'N', 'G', '\r', '\n', 26, '\n'};
     private static final byte[] JPEG_HEADER = new byte[]{(byte) 0xFF, (byte) 0xD8};
@@ -103,7 +101,9 @@ public class BitmapUtils {
         File tempFile = null;
 
         try {
-            tempFile = getTempFilename();
+            deleteOldTempFiles(getCacheDir().listFiles());
+
+            tempFile = File.createTempFile("temp_file_name", null, getCacheDir());
 
             try (FileOutputStream output = new FileOutputStream(tempFile)) {
                 newBitmap.compress(newFormat, imageOptions.reencodeQuality, output);
@@ -123,21 +123,13 @@ public class BitmapUtils {
         }
     }
 
-    private static File getTempFilename()
-            throws IOException {
-        File outputDir = getAppContext().getCacheDir();
-        deleteOldTempFiles(outputDir.listFiles());
-
-        return File.createTempFile(TEMP_FILE_NAME, TEMP_FILE_EXTENSION, outputDir);
-    }
-
     private static void deleteOldTempFiles(File[] files) {
         if (files == null || files.length == 0) {
             return;
         }
 
         for (File file : files) {
-            if (file.getAbsolutePath().contains(TEMP_FILE_NAME_WITH_CACHE_DIR)) {
+            if ("tmp".equalsIgnoreCase(Files.getFileExtension(file.getAbsolutePath()))) {
                 if (!file.delete()) {
                     Logger.w(TAG, "Could not delete old temp image file: " + file.getAbsolutePath());
                 }
@@ -199,23 +191,28 @@ public class BitmapUtils {
      * @return a bitmap, scaled to the max width and height if needed
      */
     public static Bitmap decode(InputStream data, int maxWidth, int maxHeight) {
-        // If we have to resize this image, first get the natural bounds.
         Bitmap tempBitmap = BitmapFactory.decodeStream(data);
         if (tempBitmap == null || options.outWidth == -1 || options.outHeight == -1) return null;
-        int actualWidth = tempBitmap.getWidth();
-        int actualHeight = tempBitmap.getHeight();
 
-        // Then compute the dimensions we would ideally like to decode to.
+        // Scale this image, if necessary
+        return scaleBitmap(tempBitmap, maxWidth, maxHeight);
+    }
+
+    private static Bitmap scaleBitmap(Bitmap input, int maxWidth, int maxHeight) {
+        int actualWidth = input.getWidth();
+        int actualHeight = input.getHeight();
+
+        // Then compute the dimensions we would ideally like.
         int desiredWidth = getResizedDimension(maxWidth, maxHeight, actualWidth, actualHeight);
         int desiredHeight = getResizedDimension(maxHeight, maxWidth, actualHeight, actualWidth);
 
         // If necessary, scale down to the maximal acceptable size.
         Bitmap bitmap;
         if (actualWidth > desiredWidth || actualHeight > desiredHeight) {
-            bitmap = Bitmap.createScaledBitmap(tempBitmap, desiredWidth, desiredHeight, true);
-            tempBitmap.recycle();
+            bitmap = Bitmap.createScaledBitmap(input, desiredWidth, desiredHeight, true);
+            input.recycle();
         } else {
-            bitmap = tempBitmap;
+            bitmap = input;
         }
         return bitmap;
     }
@@ -269,31 +266,37 @@ public class BitmapUtils {
     private static Bitmap decodeFilePreviewImage(final File file, int maxWidth, int maxHeight, boolean addAudioIcon) {
         Bitmap result = BitmapRepository.error;
         try {
+            // Decode normally, scaling if necessary
             result = decodeFile(file, maxWidth, maxHeight);
         } catch (Exception ignored) {
         }
         try {
+            // Decode some sort of media file
             MediaMetadataRetriever video = new MediaMetadataRetriever();
             video.setDataSource(file.getAbsolutePath());
-            Bitmap frameBitmap = video.getFrameAtTime();
+            Bitmap frameBitmap = video.getFrameAtTime(0);
+            if (frameBitmap == null) {
+                throw new Exception("No bitmap for media!");
+            }
+            result = scaleBitmap(frameBitmap, maxWidth, maxHeight);
             boolean hasAudio = "yes".equals(video.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO));
-            if (hasAudio && frameBitmap != null && addAudioIcon) {
-                Bitmap audioIconBitmap = BitmapFactory.decodeResource(getRes(), R.drawable.ic_fluent_speaker_24_filled);
+            if (hasAudio && addAudioIcon) {
+                Bitmap audioIconBitmap =
+                        BitmapFactory.decodeResource(getRes(), R.drawable.ic_fluent_speaker_2_24_filled);
                 Bitmap audioBitmap = Bitmap.createScaledBitmap(audioIconBitmap,
                         audioIconBitmap.getWidth() * 3,
                         audioIconBitmap.getHeight() * 3,
                         true
                 );
-                result = Bitmap.createBitmap(frameBitmap.getWidth(), frameBitmap.getHeight(), frameBitmap.getConfig());
-                Canvas temp = new Canvas(result);
-                temp.drawBitmap(frameBitmap, new Matrix(), null);
+                Bitmap tempBitmap = Bitmap.createBitmap(result.getWidth(), result.getHeight(), result.getConfig());
+                Canvas temp = new Canvas(tempBitmap);
+                temp.drawBitmap(result, new Matrix(), null);
                 temp.drawBitmap(audioBitmap,
                         frameBitmap.getWidth() - audioBitmap.getWidth(),
                         frameBitmap.getHeight() - audioBitmap.getHeight(),
                         null
                 );
-            } else {
-                result = frameBitmap;
+                result = tempBitmap;
             }
         } catch (Exception ignored) {
         }

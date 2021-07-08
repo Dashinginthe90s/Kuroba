@@ -24,16 +24,15 @@ import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 
+import com.franmontiel.persistentcookiejar.PersistentCookieJar;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
 import com.github.adamantcheese.chan.controller.Controller;
-import com.github.adamantcheese.chan.core.cache.CacheHandler;
-import com.github.adamantcheese.chan.core.cache.FileCacheV2;
 import com.github.adamantcheese.chan.core.database.DatabaseHelper;
 import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.core.manager.FilterWatchManager;
-import com.github.adamantcheese.chan.core.manager.SettingsNotificationManager;
 import com.github.adamantcheese.chan.core.manager.WakeManager;
+import com.github.adamantcheese.chan.core.net.NetUtils;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.settings.PersistableChanState;
 import com.github.adamantcheese.chan.core.settings.primitives.Setting;
@@ -49,16 +48,12 @@ import java.util.Set;
 
 import javax.inject.Inject;
 
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.dp;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
-import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 
 public class DeveloperSettingsController
         extends Controller {
-    @Inject
-    FileCacheV2 fileCacheV2;
-    @Inject
-    CacheHandler cacheHandler;
     @Inject
     FilterWatchManager filterWatchManager;
     @Inject
@@ -86,17 +81,9 @@ public class DeveloperSettingsController
         logsButton.setText(R.string.settings_open_logs);
         wrapper.addView(logsButton);
 
-        // Debug filters (highlights matches in comments)
-        Switch debugFiltersSwitch = new Switch(context);
-        debugFiltersSwitch.setText("Highlight filters; tap highlight to see matched filter");
-        debugFiltersSwitch.setTextColor(getAttrColor(context, android.R.attr.textColor));
-        debugFiltersSwitch.setChecked(ChanSettings.debugFilters.get());
-        debugFiltersSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> ChanSettings.debugFilters.toggle());
-        wrapper.addView(debugFiltersSwitch);
-
         // Enable/Disable verbose logs
         Switch verboseLogsSwitch = new Switch(context);
-        verboseLogsSwitch.setText("Verbose downloader logs");
+        verboseLogsSwitch.setText("Verbose logging");
         verboseLogsSwitch.setTextColor(getAttrColor(context, android.R.attr.textColor));
         verboseLogsSwitch.setChecked(ChanSettings.verboseLogs.get());
         verboseLogsSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> ChanSettings.verboseLogs.toggle());
@@ -109,16 +96,6 @@ public class DeveloperSettingsController
         });
         crashButton.setText("Crash the app");
         wrapper.addView(crashButton);
-
-        //CLEAR CACHE
-        Button clearCacheButton = new Button(context);
-        clearCacheButton.setOnClickListener(v -> {
-            fileCacheV2.clearCache();
-            showToast(context, "Cleared image cache");
-            clearCacheButton.setText("Clear image cache (currently " + cacheHandler.getSize() / 1024 / 1024 + "MB)");
-        });
-        clearCacheButton.setText("Clear image cache (currently " + cacheHandler.getSize() / 1024 / 1024 + "MB)");
-        wrapper.addView(clearCacheButton);
 
         //DATABASE SUMMARY
         TextView summaryText = new TextView(context);
@@ -153,6 +130,7 @@ public class DeveloperSettingsController
                 }
             }
             context.getSharedPreferences("com.skydoves.balloon", Context.MODE_PRIVATE).edit().clear().commit();
+            ((PersistentCookieJar) NetUtils.applicationClient.cookieJar()).clear();
             ((StartActivity) context).restartApp();
         });
         resetDbButton.setText("Reset application and restart fresh");
@@ -175,8 +153,7 @@ public class DeveloperSettingsController
 
         Button clearVideoTitleCache = new Button(context);
         clearVideoTitleCache.setOnClickListener(v -> {
-            EmbeddingEngine.videoTitleDurCache.evictAll();
-            PersistableChanState.videoTitleDurCache.setSync(PersistableChanState.videoTitleDurCache.getDefault());
+            EmbeddingEngine.getInstance().clearCache();
             showToast(context, "Cleared video title cache");
         });
         clearVideoTitleCache.setText("Clear video title cache");
@@ -220,18 +197,6 @@ public class DeveloperSettingsController
         threadCrashSwitch.setChecked(ChanSettings.crashOnWrongThread.get());
         threadCrashSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> ChanSettings.crashOnWrongThread.toggle());
         wrapper.addView(threadCrashSwitch);
-
-        Button setAppUpdate = new Button(context);
-        setAppUpdate.setOnClickListener(v ->
-                SettingsNotificationManager.postNotification(SettingsNotificationManager.SettingNotification.ApkUpdate));
-        setAppUpdate.setText("Post app update notification");
-        wrapper.addView(setAppUpdate);
-
-        Button setReport = new Button(context);
-        setReport.setOnClickListener(v ->
-                SettingsNotificationManager.postNotification(SettingsNotificationManager.SettingNotification.CrashLog));
-        setReport.setText("Post report notification");
-        wrapper.addView(setReport);
 
         ScrollView scrollView = new ScrollView(context);
         scrollView.setPadding(dp(16), dp(16), dp(16), dp(16));

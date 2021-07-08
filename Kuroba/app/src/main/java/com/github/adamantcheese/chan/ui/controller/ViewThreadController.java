@@ -17,10 +17,8 @@
 package com.github.adamantcheese.chan.ui.controller;
 
 import android.content.Context;
-import android.graphics.drawable.Drawable;
 import android.view.View;
 
-import androidx.appcompat.app.AlertDialog;
 import androidx.core.util.Pair;
 
 import com.github.adamantcheese.chan.R;
@@ -34,8 +32,8 @@ import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.model.orm.Pin;
 import com.github.adamantcheese.chan.core.presenter.ThreadPresenter;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
-import com.github.adamantcheese.chan.core.site.ExternalSiteArchive;
 import com.github.adamantcheese.chan.core.site.Site;
+import com.github.adamantcheese.chan.core.site.archives.ExternalSiteArchive;
 import com.github.adamantcheese.chan.core.site.sites.chan4.Chan4;
 import com.github.adamantcheese.chan.ui.layout.ArchivesLayout;
 import com.github.adamantcheese.chan.ui.layout.ThreadLayout;
@@ -46,8 +44,8 @@ import com.github.adamantcheese.chan.ui.toolbar.ToolbarMenuSubItem;
 import com.github.adamantcheese.chan.ui.view.FloatingMenu;
 import com.github.adamantcheese.chan.utils.AndroidUtils;
 import com.github.k1rakishou.fsaf.FileManager;
-import com.skydoves.balloon.ArrowConstraints;
 import com.skydoves.balloon.ArrowOrientation;
+import com.skydoves.balloon.ArrowPositionRules;
 import com.skydoves.balloon.Balloon;
 
 import org.greenrobot.eventbus.Subscribe;
@@ -59,27 +57,30 @@ import java.util.List;
 
 import javax.inject.Inject;
 
-import static com.github.adamantcheese.chan.ui.toolbar.ToolbarMenu.OVERFLOW_ID;
 import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
+import static com.github.adamantcheese.chan.ui.widget.DefaultAlertDialog.getDefaultAlertBuilder;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.openLinkInBrowser;
-import static com.github.adamantcheese.chan.utils.AndroidUtils.shareLink;
 
 public class ViewThreadController
         extends ThreadController
         implements ThreadLayout.ThreadLayoutCallback, ArchivesLayout.Callback, ToolbarMenuItem.OverflowMenuCallback {
-    private static final int ALBUM_ID = 1;
-    private static final int PIN_ID = 2;
-    private static final int REPLY_ID = 3;
-    private static final int ARCHIVE_ID = 4;
-    private static final int REMOVED_ID = 5;
+
+    private enum MenuId {
+        ALBUM,
+        PIN
+    }
+
+    private enum OverflowMenuId {
+        REPLY,
+        VIEW_ARCHIVE,
+        VIEW_REMOVED
+    }
 
     @Inject
     WatchManager watchManager;
     @Inject
     FileManager fileManager;
 
-    private boolean pinItemPinned = false;
     private Loadable loadable;
 
     //pairs of the current thread loadable and the thread we're going to's hashcode
@@ -109,14 +110,18 @@ public class ViewThreadController
         NavigationItem.MenuBuilder menuBuilder = navigation.buildMenu();
 
         if (!ChanSettings.textOnly.get()) {
-            menuBuilder.withItem(ALBUM_ID, R.drawable.ic_fluent_image_24_filled, this::albumClicked);
+            menuBuilder.withItem(MenuId.ALBUM, R.drawable.ic_fluent_image_24_filled, this::albumClicked);
         }
-        menuBuilder.withItem(PIN_ID, R.drawable.ic_fluent_bookmark_24_regular, this::pinClicked);
+        menuBuilder.withItem(MenuId.PIN, R.drawable.ic_fluent_bookmark_24_regular, this::pinClicked);
 
         NavigationItem.MenuOverflowBuilder menuOverflowBuilder = menuBuilder.withOverflow(this);
 
         if (!ChanSettings.enableReplyFab.get()) {
-            menuOverflowBuilder.withSubItem(REPLY_ID, R.string.action_reply, () -> threadLayout.openReply(true));
+            menuOverflowBuilder.withSubItem(
+                    OverflowMenuId.REPLY,
+                    R.string.action_reply,
+                    () -> threadLayout.openReply(true)
+            );
         }
 
         menuOverflowBuilder.withSubItem(R.string.action_search,
@@ -124,18 +129,18 @@ public class ViewThreadController
         )
                 .withSubItem(R.string.action_reload, () -> threadLayout.getPresenter().requestData());
         if (loadable.site instanceof Chan4) { //archives are 4chan only
-            menuOverflowBuilder.withSubItem(ARCHIVE_ID,
+            menuOverflowBuilder.withSubItem(OverflowMenuId.VIEW_ARCHIVE,
                     R.string.thread_view_external_archive,
                     () -> threadLayout.getPresenter().showArchives(loadable, loadable.no)
             );
         }
-        menuOverflowBuilder.withSubItem(REMOVED_ID,
+        menuOverflowBuilder.withSubItem(OverflowMenuId.VIEW_REMOVED,
                 R.string.view_removed_posts,
                 () -> threadLayout.getPresenter().showRemovedPostsDialog()
         )
                 .withSubItem(R.string.view_my_posts, this::showYourPosts)
-                .withSubItem(R.string.action_open_browser, this::openBrowserClicked)
-                .withSubItem(R.string.action_share, this::shareClicked)
+                .withSubItem(R.string.action_open_browser, () -> handleShareAndOpenInBrowser(false))
+                .withSubItem(R.string.action_share, () -> handleShareAndOpenInBrowser(true))
                 .withSubItem(R.string.action_scroll_to_top, () -> threadLayout.scrollTo(0, false))
                 .withSubItem(R.string.action_scroll_to_bottom, () -> threadLayout.scrollTo(-1, false));
 
@@ -168,26 +173,6 @@ public class ViewThreadController
         } else {
             threadLayout.showPostsPopup(null, yourPosts);
         }
-    }
-
-    private void openBrowserClicked() {
-        if (threadLayout.getPresenter().getChanThread() == null) {
-            showToast(context, R.string.cannot_open_in_browser_already_deleted);
-            return;
-        }
-
-        Loadable loadable = threadLayout.getPresenter().getLoadable();
-        openLinkInBrowser(context, loadable.desktopUrl());
-    }
-
-    private void shareClicked() {
-        if (threadLayout.getPresenter().getChanThread() == null) {
-            showToast(context, R.string.cannot_shared_thread_already_deleted);
-            return;
-        }
-
-        Loadable loadable = threadLayout.getPresenter().getLoadable();
-        shareLink(loadable.desktopUrl());
     }
 
     @Override
@@ -233,7 +218,7 @@ public class ViewThreadController
         if (threadLoadable.site instanceof ExternalSiteArchive && !loadable.site.equals(threadLoadable.site)) {
             showThreadInternal(threadLoadable);
         } else {
-            new AlertDialog.Builder(context).setNegativeButton(R.string.cancel, null)
+            getDefaultAlertBuilder(context).setNegativeButton(R.string.cancel, null)
                     .setPositiveButton(R.string.ok, (dialog, which) -> showThreadInternal(threadLoadable))
                     .setTitle(!(threadLoadable.site instanceof ExternalSiteArchive)
                             ? R.string.open_thread_confirmation
@@ -265,11 +250,10 @@ public class ViewThreadController
         if (doubleNavigationController != null
                 && doubleNavigationController.getLeftController() instanceof BrowseController) {
             //slide or phone layout
+            BrowseController browseController = (BrowseController) doubleNavigationController.getLeftController();
+            browseController.setBoard(catalogLoadable.board);
+            browseController.searchQuery = searchQuery;
             doubleNavigationController.switchToController(true);
-            ((BrowseController) doubleNavigationController.getLeftController()).setBoard(catalogLoadable.board);
-            if (searchQuery != null) {
-                ((BrowseController) doubleNavigationController.getLeftController()).searchQuery = searchQuery;
-            }
         } else if (doubleNavigationController != null
                 && doubleNavigationController.getLeftController() instanceof StyledToolbarNavigationController) {
             //split layout
@@ -290,6 +274,7 @@ public class ViewThreadController
         if (!loadable.equals(presenter.getLoadable())) {
             loadThreadInternal(loadable);
         }
+        updateDrawerHighlighting(loadable);
     }
 
     private void loadThreadInternal(Loadable loadable) {
@@ -301,28 +286,27 @@ public class ViewThreadController
         navigation.title = loadable.title;
         ((ToolbarNavigationController) navigationController).toolbar.updateTitle(navigation);
 
-        ToolbarMenuSubItem reply = navigation.findSubItem(REPLY_ID);
+        ToolbarMenuSubItem reply = navigation.findSubItem(OverflowMenuId.REPLY);
         if (reply != null) {
             reply.enabled = loadable.site.siteFeature(Site.SiteFeature.POSTING);
         }
 
-        ToolbarMenuSubItem archives = navigation.findSubItem(ARCHIVE_ID);
+        ToolbarMenuSubItem archives = navigation.findSubItem(OverflowMenuId.VIEW_ARCHIVE);
         if (archives != null) {
             archives.enabled = loadable.site instanceof Chan4;
         }
 
-        ToolbarMenuSubItem removed = navigation.findSubItem(REMOVED_ID);
+        ToolbarMenuSubItem removed = navigation.findSubItem(OverflowMenuId.VIEW_REMOVED);
         if (removed != null) {
             removed.enabled = !(loadable.site instanceof ExternalSiteArchive);
         }
 
-        ToolbarMenuItem item = navigation.findItem(PIN_ID);
+        ToolbarMenuItem item = navigation.findItem(MenuId.PIN);
         item.setVisible(!(loadable.site instanceof ExternalSiteArchive));
         ((ToolbarNavigationController) navigationController).toolbar.invalidate();
 
         setPinIconState(false);
 
-        updateDrawerHighlighting(loadable);
         updateLeftPaneHighlighting(loadable);
         presenter.requestInitialData();
     }
@@ -335,19 +319,19 @@ public class ViewThreadController
 
     private void showHints() {
         Balloon pinHint = AndroidUtils.getBaseToolTip(context)
-                .setArrowConstraints(ArrowConstraints.ALIGN_ANCHOR)
+                .setArrowPositionRules(ArrowPositionRules.ALIGN_ANCHOR)
                 .setPreferenceName("ThreadPinHint")
                 .setArrowOrientation(ArrowOrientation.TOP)
                 .setTextResource(R.string.thread_pin_hint)
                 .build();
         Balloon albumHint = AndroidUtils.getBaseToolTip(context)
-                .setArrowConstraints(ArrowConstraints.ALIGN_ANCHOR)
+                .setArrowPositionRules(ArrowPositionRules.ALIGN_ANCHOR)
                 .setPreferenceName("ThreadAlbumHint")
                 .setArrowOrientation(ArrowOrientation.TOP)
                 .setTextResource(R.string.thread_album_hint)
                 .build();
         Balloon scrollHint = AndroidUtils.getBaseToolTip(context)
-                .setArrowConstraints(ArrowConstraints.ALIGN_ANCHOR)
+                .setArrowPositionRules(ArrowPositionRules.ALIGN_ANCHOR)
                 .setPreferenceName("ThreadUpDownHint")
                 .setArrowOrientation(ArrowOrientation.TOP)
                 .setTextResource(R.string.thread_up_down_hint)
@@ -370,12 +354,12 @@ public class ViewThreadController
                 .setText("Swipe right to access bookmarks and settings")
                 .build();
 
-        Balloon chain1 = drawerHint.relayShowAlignBottom(pinHint, navigation.findItem(PIN_ID).getView());
+        Balloon chain1 = drawerHint.relayShowAlignBottom(pinHint, navigation.findItem(MenuId.PIN).getView());
         Balloon chain2 = chain1;
         if (!ChanSettings.textOnly.get()) {
-            chain2 = chain1.relayShowAlignBottom(albumHint, navigation.findItem(ALBUM_ID).getView());
+            chain2 = chain1.relayShowAlignBottom(albumHint, navigation.findItem(MenuId.ALBUM).getView());
         }
-        chain2.relayShowAlignBottom(scrollHint, navigation.findItem(OVERFLOW_ID).getView());
+        chain2.relayShowAlignBottom(scrollHint, navigation.findOverflow().getView());
         drawerHint.showAlignRight(drawer);
     }
 
@@ -429,27 +413,15 @@ public class ViewThreadController
     }
 
     private void setPinIconState(boolean animated) {
-        ThreadPresenter presenter = threadLayout.getPresenter();
-        if (presenter != null) {
-            setPinIconStateDrawable(presenter.isPinned(), animated);
-        }
-    }
+        if (loadable == null) return;
+        Pin pin = watchManager.findPinByLoadableId(loadable.id);
 
-    private void setPinIconStateDrawable(boolean pinned, boolean animated) {
-        if (pinned == pinItemPinned) {
-            return;
-        }
-        ToolbarMenuItem menuItem = navigation.findItem(PIN_ID);
+        ToolbarMenuItem menuItem = navigation.findItem(MenuId.PIN);
         if (menuItem == null) {
             return;
         }
 
-        pinItemPinned = pinned;
-
-        Drawable outline = context.getDrawable(R.drawable.ic_fluent_bookmark_24_regular);
-        Drawable white = context.getDrawable(R.drawable.ic_fluent_bookmark_24_filled);
-
-        Drawable drawable = pinned ? white : outline;
+        int drawable = pin != null ? R.drawable.ic_fluent_bookmark_24_filled : R.drawable.ic_fluent_bookmark_24_regular;
         menuItem.setImage(drawable, animated);
     }
 

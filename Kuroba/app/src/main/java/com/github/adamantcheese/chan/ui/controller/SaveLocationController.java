@@ -20,9 +20,9 @@ import android.Manifest;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.os.Environment;
+import android.view.LayoutInflater;
 import android.view.View;
-
-import androidx.appcompat.app.AlertDialog;
+import android.view.ViewGroup;
 
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.StartActivity;
@@ -37,9 +37,9 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import java.io.File;
 
-import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
-import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
+import static com.github.adamantcheese.chan.ui.widget.DefaultAlertDialog.getDefaultAlertBuilder;
+import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 
 public class SaveLocationController
         extends Controller
@@ -63,7 +63,7 @@ public class SaveLocationController
 
         navigation.setTitle(R.string.save_location_screen);
 
-        view = inflate(context, R.layout.controller_save_location);
+        view = (ViewGroup) LayoutInflater.from(context).inflate(R.layout.controller_save_location, null);
         filesLayout = view.findViewById(R.id.files_layout);
         filesLayout.setCallback(this);
         setButton = view.findViewById(R.id.set_button);
@@ -85,9 +85,10 @@ public class SaveLocationController
             onDirectoryChosen();
             navigationController.popController();
         } else if (v == addButton) {
-            final NewFolderLayout dialogView = (NewFolderLayout) inflate(context, R.layout.layout_folder_add, null);
+            final NewFolderLayout dialogView =
+                    (NewFolderLayout) LayoutInflater.from(v.getContext()).inflate(R.layout.layout_folder_add, null);
 
-            new AlertDialog.Builder(context).setView(dialogView)
+            getDefaultAlertBuilder(v.getContext()).setView(dialogView)
                     .setTitle(R.string.save_new_folder)
                     .setPositiveButton(R.string.add, (dialog, which) -> onPositionButtonClick(dialogView, dialog))
                     .setNegativeButton(R.string.cancel, null)

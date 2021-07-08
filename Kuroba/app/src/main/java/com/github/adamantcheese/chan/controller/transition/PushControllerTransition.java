@@ -23,21 +23,19 @@ import android.animation.ObjectAnimator;
 import android.view.View;
 import android.view.animation.DecelerateInterpolator;
 
-import com.github.adamantcheese.chan.controller.ControllerTransition;
+import androidx.core.view.OneShotPreDrawListener;
 
-import static com.github.adamantcheese.chan.utils.AndroidUtils.waitForMeasure;
+import com.github.adamantcheese.chan.controller.ControllerTransition;
 
 public class PushControllerTransition
         extends ControllerTransition {
     @Override
     public void perform() {
-        waitForMeasure(to.view, view -> {
+        OneShotPreDrawListener.add(to.view, () -> {
             Animator toAlpha = ObjectAnimator.ofFloat(to.view, View.ALPHA, 0f, 1f);
-            toAlpha.setDuration(200);
             toAlpha.setInterpolator(new DecelerateInterpolator(2f));
 
             Animator toY = ObjectAnimator.ofFloat(to.view, View.TRANSLATION_Y, to.view.getHeight() * 0.08f, 0f);
-            toY.setDuration(350);
             toY.setInterpolator(new DecelerateInterpolator(2.5f));
 
             toY.addListener(new AnimatorListenerAdapter() {
@@ -50,7 +48,6 @@ public class PushControllerTransition
             AnimatorSet set = new AnimatorSet();
             set.playTogether(/*fromAlpha, */toAlpha, toY);
             set.start();
-            return true;
         });
     }
 }

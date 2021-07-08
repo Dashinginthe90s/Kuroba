@@ -16,8 +16,6 @@
  */
 package com.github.adamantcheese.chan.core.site.sites;
 
-import androidx.annotation.NonNull;
-
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
 import com.github.adamantcheese.chan.core.site.SiteIcon;
@@ -102,20 +100,9 @@ public class Lainchan
             }
         });
 
-        setEndpoints(new VichanEndpoints(this, "https://lainchan.org", "https://lainchan.org") {
-            @Override
-            public HttpUrl banned() {
-                return root.builder().s("banned").url();
-            }
-        });
+        setEndpoints(new VichanEndpoints(this, "https://lainchan.org", "https://lainchan.org"));
         setActions(new VichanActions(this));
         setApi(new VichanApi(this));
         setParser(new VichanCommentParser());
-    }
-
-    @NonNull
-    @Override
-    public ChunkDownloaderSiteProperties getChunkDownloaderSiteProperties() {
-        return new ChunkDownloaderSiteProperties(Integer.MAX_VALUE, true, true);
     }
 }

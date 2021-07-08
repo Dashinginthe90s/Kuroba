@@ -25,6 +25,7 @@ import androidx.annotation.NonNull;
 
 import com.github.adamantcheese.chan.core.model.orm.Board;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
+import com.github.adamantcheese.chan.features.embedding.Embeddable;
 import com.github.adamantcheese.chan.utils.Logger;
 import com.vdurmont.emoji.EmojiParser;
 
@@ -36,7 +37,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -44,8 +44,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * All {@code final} fields are thread-safe.
  */
 public class Post
+        extends Embeddable
         implements Comparable<Post>, Cloneable {
-    public final String boardId;
+    public final String boardCode;
 
     public final Board board;
 
@@ -97,8 +98,6 @@ public class Post
      */
     public final Set<Integer> repliesTo;
 
-    public final Set<PostLinkable> linkables;
-
     public final CharSequence subjectSpan;
 
     public final CharSequence nameTripcodeIdCapcodeSpan;
@@ -123,15 +122,13 @@ public class Post
     private long lastModified;
     private String title = "";
 
-    public AtomicBoolean embedComplete = new AtomicBoolean(false);
-
     public int compareTo(Post p) {
         return -Long.compare(this.time, p.time);
     }
 
     private Post(Builder builder) {
         board = builder.board;
-        boardId = builder.board.code;
+        boardCode = builder.board.code;
         no = builder.no;
 
         isOP = builder.op;
@@ -175,7 +172,6 @@ public class Post
         subjectSpan = builder.subjectSpan;
         nameTripcodeIdCapcodeSpan = builder.nameTripcodeIdCapcodeSpan;
 
-        linkables = new CopyOnWriteArraySet<>(builder.linkables);
         repliesTo = Collections.unmodifiableSet(builder.repliesToNos);
     }
 
@@ -269,40 +265,18 @@ public class Post
         return images.isEmpty() ? null : images.get(0);
     }
 
-    /**
-     * Adds an image to the images set; generally don't do this unless you have some special reason for it!
-     * Add images while the post is still a Builder instance if you can instead!
-     */
-    public void addImages(List<PostImage> images) {
-        for (PostImage i : images) {
-            if (this.images.contains(i)) continue;
-            if (images.size() >= 5) {
-                Logger.d(this, "Image list is capped at 5 images!");
-                return;
-            }
-            this.images.add(i);
-        }
-    }
-
-    /**
-     * @param replacement The replacement comment to override the existing one in this post. Use wisely!
-     */
-    public synchronized void setComment(SpannableStringBuilder replacement) {
-        try {
-            synchronized (comment) {
-                Field c = Post.class.getField("comment");
-                c.setAccessible(true);
-                c.set(this, replacement);
-                c.setAccessible(false);
-            }
-        } catch (Exception e) {
-            Logger.d(this, "Failed to set new comment!");
-        }
-    }
-
     @MainThread
     public boolean hasFilterParameters() {
         return filterRemove || filterHighlightedColor != 0 || filterReplies || filterStub;
+    }
+
+    @MainThread
+    public List<PostLinkable> getLinkables() {
+        synchronized (comment) {
+            List<PostLinkable> linkables = new ArrayList<>();
+            Collections.addAll(linkables, comment.getSpans(0, comment.length(), PostLinkable.class));
+            return linkables;
+        }
     }
 
     @Override
@@ -327,7 +301,7 @@ public class Post
                 && closed == post.closed
                 && archived == post.archived
                 && lastModified == post.lastModified
-                && Objects.equals(boardId, post.boardId)
+                && Objects.equals(boardCode, post.boardCode)
                 && Objects.equals(board, post.board)
                 && Objects.equals(name, post.name)
                 && Objects.equals(comment, post.comment)
@@ -338,7 +312,6 @@ public class Post
                 && Objects.equals(capcode, post.capcode)
                 && Objects.equals(httpIcons, post.httpIcons)
                 && Objects.equals(repliesTo, post.repliesTo)
-                && Objects.equals(linkables, post.linkables)
                 && Objects.equals(deleted.get(), post.deleted.get())
                 && Objects.equals(repliesFrom, post.repliesFrom)
                 && Objects.equals(title, post.title)
@@ -350,7 +323,7 @@ public class Post
     @Override
     public int hashCode() {
         return Objects.hash(
-                boardId,
+                boardCode,
                 board,
                 no,
                 isOP,
@@ -373,7 +346,6 @@ public class Post
                 filterOnlyOP,
                 filterSaved,
                 repliesTo,
-                linkables,
                 deleted.get(),
                 repliesFrom,
                 sticky,
@@ -392,6 +364,7 @@ public class Post
                 + "]";
     }
 
+    @SuppressWarnings("MethodDoesntCallSuperMethod")
     @NonNull
     @Override
     public Post clone() {
@@ -426,7 +399,6 @@ public class Post
                 )
                 .isSavedReply(isSavedReply)
                 .spans(subjectSpan, nameTripcodeIdCapcodeSpan)
-                .linkables(linkables)
                 .repliesTo(repliesTo)
                 .build();
         clone.repliesFrom.addAll(repliesFrom);
@@ -436,8 +408,38 @@ public class Post
         return clone;
     }
 
+    @Override
+    public SpannableStringBuilder getEmbeddableText() {
+        return comment;
+    }
+
+    @MainThread
+    @Override
+    public void setEmbeddableText(SpannableStringBuilder text) {
+        try {
+            synchronized (comment) {
+                Field c = Post.class.getField("comment");
+                c.setAccessible(true);
+                c.set(this, text);
+                c.setAccessible(false);
+            }
+        } catch (Exception e) {
+            Logger.d(this, "Failed to set new comment!");
+        }
+    }
+
+    @Override
+    public void addImageObjects(List<PostImage> images) {
+        for (PostImage p : images) {
+            if (this.images.contains(p)) continue;
+            if (images.size() >= 5) return;
+            this.images.add(p);
+        }
+    }
+
     @SuppressWarnings("UnusedReturnValue")
-    public static final class Builder {
+    public static final class Builder
+            implements Cloneable {
         public Board board;
         public int no = -1;
         public int opId = -1;
@@ -478,8 +480,7 @@ public class Post
         public CharSequence subjectSpan;
         public CharSequence nameTripcodeIdCapcodeSpan;
 
-        private final Set<PostLinkable> linkables = new CopyOnWriteArraySet<>();
-        private final Set<Integer> repliesToNos = new HashSet<>();
+        public final Set<Integer> repliesToNos = new HashSet<>();
 
         public Builder() {
         }
@@ -578,6 +579,12 @@ public class Post
             return this;
         }
 
+        /**
+         * Add images to this post
+         *
+         * @param images A list of images to add
+         * @return This builder
+         */
         public Builder images(List<PostImage> images) {
             this.images.addAll(images);
 
@@ -649,24 +656,58 @@ public class Post
             return this;
         }
 
-        public Builder addLinkable(PostLinkable linkable) {
-            linkables.add(linkable);
-            return this;
-        }
-
-        public Builder linkables(Set<PostLinkable> linkables) {
-            this.linkables.addAll(linkables);
-            return this;
-        }
-
-        public Builder addReplyTo(int postNo) {
-            repliesToNos.add(postNo);
-            return this;
-        }
-
+        /**
+         * Specify that this post replies to these post number
+         *
+         * @param repliesToNos The post numbers that are being replied to
+         */
         public Builder repliesTo(Set<Integer> repliesToNos) {
             this.repliesToNos.addAll(repliesToNos);
             return this;
+        }
+
+        public List<PostLinkable> getLinkables() {
+            List<PostLinkable> linkables = new ArrayList<>();
+            Collections.addAll(linkables, comment.getSpans(0, comment.length(), PostLinkable.class));
+            return linkables;
+        }
+
+        @SuppressWarnings("MethodDoesntCallSuperMethod")
+        @NonNull
+        @Override
+        public Post.Builder clone() {
+            return new Builder().board(board)
+                    .no(no)
+                    .opId(opId)
+                    .op(op)
+                    .replies(replies)
+                    .images(imagesCount)
+                    .uniqueIps(uniqueIps)
+                    .sticky(sticky)
+                    .closed(closed)
+                    .archived(archived)
+                    .lastModified(lastModified)
+                    .subject(subject)
+                    .name(name)
+                    .comment(comment)
+                    .tripcode(tripcode)
+                    .setUnixTimestampSeconds(unixTimestampSeconds)
+                    .images(images)
+                    .posterId(posterId)
+                    .moderatorCapcode(moderatorCapcode)
+                    .setHttpIcons(httpIcons)
+                    .filter(
+                            filterHighlightedColor,
+                            filterStub,
+                            filterRemove,
+                            filterWatch,
+                            filterReplies,
+                            filterOnlyOP,
+                            filterSaved
+                    )
+                    .isSavedReply(isSavedReply)
+                    .spans(subjectSpan, nameTripcodeIdCapcodeSpan)
+                    .repliesTo(repliesToNos);
         }
 
         public Post build() {

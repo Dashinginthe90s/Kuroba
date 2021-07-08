@@ -21,16 +21,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     android:orientation="vertical"
     tools:background="?backcolor">
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recycler_view"
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipe_refresh"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:clipToPadding="false"
-        android:descendantFocusability="beforeDescendants"
-        android:scrollbars="vertical"
-        tools:itemCount="3"
-        tools:listitem="@layout/cell_post" />
+        android:layout_height="match_parent">
 
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recycler_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:descendantFocusability="beforeDescendants"
+            android:scrollbars="vertical"
+            tools:itemCount="5"
+            tools:listitem="@layout/cell_post" />
+
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- Toggle the tools visibility to see changes here -->
     <com.github.adamantcheese.chan.ui.layout.ReplyLayout
         android:id="@+id/reply"
         android:layout_width="match_parent"
@@ -38,7 +46,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         android:background="?backcolor"
         android:elevation="4dp"
         android:visibility="gone"
-        tools:ignore="UnusedAttribute" />
+        tools:visibility="visible" />
 
     <TextView
         android:id="@+id/search_status"
@@ -48,9 +56,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         android:elevation="4dp"
         android:gravity="center"
         android:padding="8dp"
-        android:singleLine="true"
         android:textColor="?android:textColorSecondary"
         android:visibility="gone"
-        tools:ignore="UnusedAttribute" />
+        tools:text="@string/search_empty"
+        tools:visibility="visible" />
 
 </com.github.adamantcheese.chan.ui.layout.ThreadListLayout>

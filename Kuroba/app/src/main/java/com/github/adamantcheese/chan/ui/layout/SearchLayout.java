@@ -158,7 +158,7 @@ public class SearchLayout
     public interface SearchLayoutCallback {
         void onSearchEntered(String entered);
 
-        void onClearPressedWhenEmpty();
+        default void onClearPressedWhenEmpty() {}
     }
 
     public void openKeyboard() {

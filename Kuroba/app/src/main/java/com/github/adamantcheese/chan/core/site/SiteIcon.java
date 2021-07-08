@@ -22,19 +22,17 @@ import android.graphics.drawable.Drawable;
 
 import androidx.annotation.NonNull;
 
+import com.github.adamantcheese.chan.core.net.NetUtils;
+import com.github.adamantcheese.chan.core.net.NetUtilsClasses.BitmapResult;
 import com.github.adamantcheese.chan.core.repository.BitmapRepository;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.Logger;
-import com.github.adamantcheese.chan.utils.NetUtils;
-import com.github.adamantcheese.chan.utils.NetUtilsClasses.BitmapResult;
 
 import okhttp3.HttpUrl;
 
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getRes;
 
 public class SiteIcon {
-    private static final int FAVICON_SIZE = 64;
-
     private HttpUrl url;
     private Drawable drawable;
 
@@ -59,7 +57,7 @@ public class SiteIcon {
         } else if (url != null) {
             NetUtils.makeBitmapRequest(url, new BitmapResult() {
                 @Override
-                public void onBitmapFailure(HttpUrl source, Exception e) {
+                public void onBitmapFailure(@NonNull HttpUrl source, Exception e) {
                     Logger.e(SiteIcon.this, "Error loading favicon", e);
                     drawable = null;
                     BackgroundUtils.runOnMainThread(() -> res.onSiteIcon(new BitmapDrawable(getRes(),
@@ -68,13 +66,13 @@ public class SiteIcon {
                 }
 
                 @Override
-                public void onBitmapSuccess(HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
+                public void onBitmapSuccess(@NonNull HttpUrl source, @NonNull Bitmap bitmap, boolean fromCache) {
                     drawable = new BitmapDrawable(getRes(), bitmap);
                     drawable.setFilterBitmap(false);
                     drawable.setDither(false);
                     BackgroundUtils.runOnMainThread(() -> res.onSiteIcon(drawable));
                 }
-            }, FAVICON_SIZE, FAVICON_SIZE);
+            });
         }
     }
 

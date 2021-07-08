@@ -3,6 +3,7 @@ package com.github.adamantcheese.chan.ui.adapter;
 import android.graphics.drawable.ColorDrawable;
 import android.text.SpannableString;
 import android.text.style.StyleSpan;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
@@ -15,7 +16,9 @@ import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager;
 import com.github.adamantcheese.chan.core.database.DatabaseLoadableManager.History;
 import com.github.adamantcheese.chan.core.database.DatabaseUtils;
 import com.github.adamantcheese.chan.ui.layout.SearchLayout;
+import com.github.adamantcheese.chan.ui.theme.ThemeHelper;
 import com.github.adamantcheese.chan.ui.view.ThumbnailView;
+import com.github.adamantcheese.chan.utils.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,7 +38,6 @@ import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrDrawable;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getString;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.updatePaddings;
-import static com.github.adamantcheese.chan.utils.LayoutUtils.inflate;
 import static com.github.adamantcheese.chan.utils.StringUtils.applySearchSpans;
 
 public class DrawerHistoryAdapter
@@ -75,14 +77,14 @@ public class DrawerHistoryAdapter
 
     @Override
     public HistoryCell onCreateViewHolder(ViewGroup parent, int viewType) {
-        return new HistoryCell(inflate(parent.getContext(), R.layout.cell_history, parent, false));
+        return new HistoryCell(LayoutInflater.from(parent.getContext()).inflate(R.layout.cell_history, parent, false));
     }
 
     @Override
     public void onBindViewHolder(HistoryCell holder, int position) {
         History history = historyList.get(position);
         if (history != LOADING && history != NO_HISTORY) {
-            if (!history.loadable.title.toLowerCase().contains(searchQuery.toLowerCase())) {
+            if (!StringUtils.containsIgnoreCase(history.loadable.title, searchQuery)) {
                 holder.itemView.setVisibility(View.GONE);
                 ViewGroup.LayoutParams oldParams = holder.itemView.getLayoutParams();
                 oldParams.height = 0;
@@ -94,9 +96,9 @@ public class DrawerHistoryAdapter
                 holder.itemView.getLayoutParams().width = MATCH_PARENT;
                 holder.itemView.getLayoutParams().height = WRAP_CONTENT;
             }
-            holder.thumbnail.setUrl(history.loadable.thumbnailUrl, dp(48), dp(48));
+            holder.thumbnail.setUrl(history.loadable.thumbnailUrl, holder.thumbnail.getLayoutParams().height);
 
-            holder.text.setText(applySearchSpans(history.loadable.title, searchQuery));
+            holder.text.setText(applySearchSpans(ThemeHelper.getTheme(), history.loadable.title, searchQuery));
             holder.subtext.setText(String.format("/%s/ – %s",
                     history.loadable.board.code,
                     history.loadable.board.name
@@ -131,7 +133,7 @@ public class DrawerHistoryAdapter
         // since views can be recycled, we need to take care of everything that could've occurred, including the loading screen
         holder.itemView.getLayoutParams().height = WRAP_CONTENT;
         holder.thumbnail.setVisibility(View.VISIBLE);
-        holder.thumbnail.setUrl(null, 0, 0);
+        holder.thumbnail.setUrl(null, 0);
         holder.text.setText("");
         holder.text.setGravity(TOP | START | CENTER);
         holder.text.getLayoutParams().height = WRAP_CONTENT;
@@ -150,7 +152,7 @@ public class DrawerHistoryAdapter
     public long getItemId(int position) {
         return historyList.get(position) == null
                 ? NO_ID
-                : (historyList.get(position).loadable == null ? NO_ID : historyList.get(position).loadable.id);
+                : (historyList.get(position).loadable == null ? NO_ID : historyList.get(position).loadable.no);
     }
 
     @Override
@@ -175,7 +177,6 @@ public class DrawerHistoryAdapter
             super(itemView);
 
             thumbnail = itemView.findViewById(R.id.thumbnail);
-            thumbnail.setCircular(true);
             text = itemView.findViewById(R.id.text);
             subtext = itemView.findViewById(R.id.subtext);
 

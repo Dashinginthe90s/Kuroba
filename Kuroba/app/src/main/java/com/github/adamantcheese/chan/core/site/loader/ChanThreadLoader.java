@@ -30,13 +30,13 @@ import com.github.adamantcheese.chan.core.manager.WatchManager;
 import com.github.adamantcheese.chan.core.model.ChanThread;
 import com.github.adamantcheese.chan.core.model.Post;
 import com.github.adamantcheese.chan.core.model.orm.Loadable;
+import com.github.adamantcheese.chan.core.net.NetUtils;
+import com.github.adamantcheese.chan.core.net.NetUtilsClasses.HttpCodeException;
+import com.github.adamantcheese.chan.core.net.NetUtilsClasses.ResponseResult;
 import com.github.adamantcheese.chan.core.site.parser.ChanReaderParser;
 import com.github.adamantcheese.chan.ui.helper.PostHelper;
 import com.github.adamantcheese.chan.utils.BackgroundUtils;
 import com.github.adamantcheese.chan.utils.Logger;
-import com.github.adamantcheese.chan.utils.NetUtils;
-import com.github.adamantcheese.chan.utils.NetUtilsClasses.HttpCodeException;
-import com.github.adamantcheese.chan.utils.NetUtilsClasses.ResponseResult;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +47,7 @@ import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import javax.net.ssl.SSLException;
 
+import okhttp3.CacheControl;
 import okhttp3.Call;
 import okhttp3.HttpUrl;
 
@@ -100,7 +101,6 @@ public class ChanThreadLoader {
      * @param listener the listener to add
      */
     public void addListener(ChanLoaderCallback listener) {
-        BackgroundUtils.ensureMainThread();
         listeners.add(listener);
     }
 
@@ -138,11 +138,6 @@ public class ChanThreadLoader {
     public void requestData() {
         BackgroundUtils.ensureMainThread();
         clearTimer();
-        requestDataInternal();
-    }
-
-    private void requestDataInternal() {
-        BackgroundUtils.ensureMainThread();
 
         if (call != null) {
             call.cancel();
@@ -236,8 +231,6 @@ public class ChanThreadLoader {
      * Get the time in milliseconds until another loadMore is recommended
      */
     public long getTimeUntilLoadMore() {
-        BackgroundUtils.ensureMainThread();
-
         if (call != null) {
             return 0L;
         } else {
@@ -255,18 +248,26 @@ public class ChanThreadLoader {
             }
         }
 
-        return NetUtils.makeJsonRequest(getChanUrl(loadable), new ResponseResult<ChanLoaderResponse>() {
-            @Override
-            public void onFailure(Exception e) {
-                BackgroundUtils.runOnMainThread(() -> onErrorResponse(e));
-            }
+        return NetUtils.makeJsonRequest(
+                getChanUrl(loadable),
+                new ResponseResult<ChanLoaderResponse>() {
+                    @Override
+                    public void onFailure(Exception e) {
+                        notifyAboutError(new ChanLoaderException(e));
+                    }
 
-            @Override
-            public void onSuccess(ChanLoaderResponse result) {
-                clearTimer();
-                BackgroundUtils.runOnBackgroundThread(() -> onResponse(result));
-            }
-        }, new ChanReaderParser(loadable, cachedClones, null));
+                    @Override
+                    public void onSuccess(ChanLoaderResponse result) {
+                        clearTimer();
+                        BackgroundUtils.runOnBackgroundThread(() -> onResponse(result));
+                    }
+                },
+                new ChanReaderParser(loadable, cachedClones, null),
+                // todo change this so that If-Modified-Since takes care of stuff
+                // cache this for the amount of time of the current timeout, minus a second to ensure it is purged upon the next request
+                new CacheControl.Builder().maxAge(WATCH_TIMEOUTS[Math.max(0, currentTimeout)] - 1, TimeUnit.SECONDS)
+                        .build()
+        );
     }
 
     private HttpUrl getChanUrl(Loadable loadable) {
@@ -294,23 +295,19 @@ public class ChanThreadLoader {
         call = null;
 
         try {
+            if (response.posts.isEmpty()) {
+                throw new Exception("No posts in thread!");
+            }
+
             onResponseInternal(response);
         } catch (Throwable e) {
             Logger.e(ChanThreadLoader.this, "onResponse error", e);
-            BackgroundUtils.runOnMainThread(() -> notifyAboutError(e instanceof Exception
-                    ? (Exception) e
-                    : new Exception(e)));
+            notifyAboutError(new ChanLoaderException(e instanceof Exception ? (Exception) e : new Exception(e)));
         }
     }
 
     private void onResponseInternal(ChanLoaderResponse response) {
         BackgroundUtils.ensureBackgroundThread();
-
-        // Normal thread, not archived/deleted/closed
-        if (response == null || response.posts == null || response.posts.isEmpty()) {
-            BackgroundUtils.runOnMainThread(() -> onErrorResponse(new Exception("Post size is 0")));
-            return;
-        }
 
         synchronized (this) {
             if (thread == null) {
@@ -318,10 +315,6 @@ public class ChanThreadLoader {
             }
 
             thread.setNewPosts(response.posts);
-        }
-
-        if (thread == null) {
-            throw new IllegalStateException("thread is null");
         }
 
         ChanThread localThread = thread;
@@ -377,21 +370,17 @@ public class ChanThreadLoader {
         });
     }
 
-    private void onErrorResponse(Exception error) {
+    private void notifyAboutError(ChanLoaderException exception) {
         call = null;
-        Logger.e(this, "Loading error", error);
-        notifyAboutError(error);
-    }
-
-    private void notifyAboutError(Exception exception) {
-        BackgroundUtils.ensureMainThread();
-
         clearTimer();
-        ChanLoaderException loaderException = new ChanLoaderException(exception);
 
-        for (ChanLoaderCallback l : listeners) {
-            l.onChanLoaderError(loaderException);
-        }
+        Logger.e(this, "Loading error", exception);
+
+        BackgroundUtils.runOnMainThread(() -> {
+            for (ChanLoaderCallback l : listeners) {
+                l.onChanLoaderError(exception);
+            }
+        });
     }
 
     private void clearPendingRunnable() {

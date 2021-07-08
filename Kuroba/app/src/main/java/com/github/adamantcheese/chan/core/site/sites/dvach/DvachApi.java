@@ -80,9 +80,9 @@ public class DvachApi
     public void readPostObject(JsonReader reader, ChanReaderProcessingQueue queue)
             throws Exception {
         Post.Builder builder = new Post.Builder();
-        builder.board(queue.getLoadable().board);
+        builder.board(queue.loadable.board);
 
-        SiteEndpoints endpoints = queue.getLoadable().site.endpoints();
+        SiteEndpoints endpoints = queue.loadable.site.endpoints();
 
         List<PostImage> files = new ArrayList<>();
 
@@ -108,7 +108,7 @@ public class DvachApi
                     break;
                 case "op":
                     int opId = reader.nextInt();
-                    builder.op(opId == 0 && queue.getLoadable().no == builder.no);
+                    builder.op(opId == 0 && queue.loadable.no == builder.no);
                     builder.opId(opId);
                     break;
                 case "sticky":
@@ -157,15 +157,7 @@ public class DvachApi
 
         if (builder.op) {
             // Update OP fields later on the main thread
-            Post.Builder op = new Post.Builder();
-            op.closed(builder.closed);
-            op.archived(builder.archived);
-            op.sticky(builder.sticky);
-            op.replies(builder.replies);
-            op.images(builder.imagesCount);
-            op.uniqueIps(builder.uniqueIps);
-            op.lastModified(builder.lastModified);
-            queue.setOp(op);
+            queue.setOp(builder.clone());
         }
 
         Post cached = queue.getCachedPost(builder.no);

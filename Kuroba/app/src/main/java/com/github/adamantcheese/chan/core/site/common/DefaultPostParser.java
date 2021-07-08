@@ -20,6 +20,9 @@ import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.text.style.BackgroundColorSpan;
+import android.text.style.ClickableSpan;
+import android.text.style.StrikethroughSpan;
+import android.view.View;
 
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
@@ -27,6 +30,7 @@ import androidx.annotation.NonNull;
 import com.github.adamantcheese.chan.R;
 import com.github.adamantcheese.chan.core.manager.FilterEngine;
 import com.github.adamantcheese.chan.core.model.Post;
+import com.github.adamantcheese.chan.core.model.PostLinkable;
 import com.github.adamantcheese.chan.core.model.orm.Filter;
 import com.github.adamantcheese.chan.core.settings.ChanSettings;
 import com.github.adamantcheese.chan.core.site.parser.CommentParser;
@@ -53,6 +57,7 @@ import java.util.regex.Pattern;
 import javax.inject.Inject;
 
 import static com.github.adamantcheese.chan.Chan.inject;
+import static com.github.adamantcheese.chan.ui.widget.CancellableToast.showToast;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getAttrColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.getContrastColor;
 import static com.github.adamantcheese.chan.utils.AndroidUtils.sp;
@@ -63,6 +68,17 @@ public class DefaultPostParser
     private final CommentParser commentParser;
     @Inject
     private FilterEngine filterEngine;
+
+    // All of these have one matching group associated with the text they need to work
+    // This negative lookbehind and negative lookahead are just so it doesn't match too much stuff, experimentally determined
+    // not preceded by /, ", l, &, : and not followed by ;
+    // otherwise match @num, #num, and $num
+    private final Pattern extraQuotePattern = Pattern.compile("(?<![/\"l&:])[@#$](\\d+)(?!;)");
+    private final Pattern extraSpoilerPattern = Pattern.compile("\\[spoiler\\](.*?)\\[/spoiler\\]");
+    private final Pattern boldPattern = Pattern.compile("\\*\\*(.+)\\*\\*");
+    private final Pattern italicPattern = Pattern.compile("\\*(.+)\\*");
+    private final Pattern codePattern = Pattern.compile("`(.+)`");
+    private final Pattern strikePattern = Pattern.compile("~~(.+)~~");
 
     public DefaultPostParser(CommentParser commentParser) {
         this.commentParser = commentParser;
@@ -80,11 +96,27 @@ public class DefaultPostParser
         }
 
         parseInfoSpans(theme, builder);
+        builder.comment = parseComment(theme, builder, callback);
 
-        if (builder.comment != null) {
-            builder.comment = parseComment(theme, builder, callback);
-        } else {
-            builder.comment = new SpannableStringBuilder("");
+        // process any removed posts, and remove any linkables/spans attached
+        for (PostLinkable l : builder.getLinkables()) {
+            if (l.type == PostLinkable.Type.QUOTE) {
+                if (callback.isRemoved((int) l.value)) {
+                    builder.repliesToNos.remove((int) l.value);
+                    builder.comment.setSpan(new StrikethroughSpan(),
+                            builder.comment.getSpanStart(l),
+                            builder.comment.getSpanEnd(l),
+                            0
+                    );
+                    builder.comment.setSpan(new ClickableSpan() {
+                        @Override
+                        public void onClick(@NonNull View widget) {
+                            showToast(widget.getContext(), "This post has been removed.");
+                        }
+                    }, builder.comment.getSpanStart(l), builder.comment.getSpanEnd(l), 0);
+                    builder.comment.removeSpan(l);
+                }
+            }
         }
 
         processPostFilter(filters, builder);
@@ -181,9 +213,21 @@ public class DefaultPostParser
 
         try {
             String comment = post.comment.toString().replace("<wbr>", "");
-            Document document = Jsoup.parseBodyFragment(comment);
+            // modifiers for HTML
+            if (ChanSettings.parseExtraQuotes.get()) {
+                comment = extraQuotePattern.matcher(comment).replaceAll(commentParser.createQuoteElementString(post));
+            }
+            if (ChanSettings.parseExtraSpoilers.get()) {
+                comment = extraSpoilerPattern.matcher(comment).replaceAll("<s>$1</s>");
+            }
+            if (ChanSettings.mildMarkdown.get()) {
+                comment = boldPattern.matcher(comment).replaceAll("<b>$1</b>");
+                comment = italicPattern.matcher(comment).replaceAll("<i>$1</i>");
+                comment = codePattern.matcher(comment).replaceAll("<pre class=\"prettyprint\">$1</pre>");
+                comment = strikePattern.matcher(comment).replaceAll("<strike>$1</strike>");
+            }
 
-            for (Node node : document.body().childNodes()) {
+            for (Node node : Jsoup.parseBodyFragment(comment).body().childNodes()) {
                 total.append(parseNode(theme, post, callback, node));
             }
         } catch (Exception e) {
@@ -203,19 +247,6 @@ public class DefaultPostParser
             }
             return new SpannableStringBuilder(text);
         } else if (node instanceof Element) {
-            StringBuilder nodeName = new StringBuilder(node.nodeName());
-            String styleAttr = node.attr("style");
-            if (!styleAttr.isEmpty() && !nodeName.toString().equals("span")) {
-                nodeName.append('-');
-                String[] split = styleAttr.split(";");
-                for (int i = 0; i < split.length; i++) {
-                    nodeName.append(split[i].trim());
-                    if (i < split.length - 1) {
-                        nodeName.append('-');
-                    }
-                }
-            }
-
             // Recursively call parseNode with the nodes of the paragraph.
             List<Node> innerNodes = node.childNodes();
             List<CharSequence> texts = new ArrayList<>(innerNodes.size() + 1);
@@ -227,7 +258,7 @@ public class DefaultPostParser
             CharSequence allInnerText = TextUtils.concat(texts.toArray(new CharSequence[0]));
 
             CharSequence result =
-                    commentParser.handleTag(callback, theme, post, nodeName.toString(), allInnerText, (Element) node);
+                    commentParser.handleTag(callback, theme, post, node.nodeName(), allInnerText, (Element) node);
             return new SpannableStringBuilder(result != null ? result : "");
         } else {
             Logger.e(this, "Unknown node instance: " + node.getClass().getName());
