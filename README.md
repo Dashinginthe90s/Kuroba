@@ -1,3 +1,5 @@
+Same as the original except the keyboard won't automatically pop up after leaving a thread with the search open.
+
 # Kuroba - imageboard browser for Android
 ## All releases are less dev than actual dev. Do not assume they are stable, but they're more stable than actual dev.
 
